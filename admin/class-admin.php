@@ -54,6 +54,9 @@ class Blt_Secure_Admin {
 		add_action( 'wp_ajax_blt_secure_cf_delete_token', array( $this, 'ajax_delete_token' ) );
 		add_action( 'wp_ajax_blt_secure_cf_deploy', array( $this, 'ajax_deploy' ) );
 		add_action( 'wp_ajax_blt_secure_cf_remove', array( $this, 'ajax_remove' ) );
+		add_action( 'wp_ajax_blt_secure_gh_save_token', array( $this, 'ajax_gh_save_token' ) );
+		add_action( 'wp_ajax_blt_secure_gh_delete_token', array( $this, 'ajax_gh_delete_token' ) );
+		add_action( 'admin_notices', array( $this, 'update_token_notice' ) );
 	}
 
 	/**
@@ -186,9 +189,43 @@ class Blt_Secure_Admin {
 		printf(
 			'<div class="notice notice-error"><p><strong>%s</strong> %s <a href="%s">%s</a></p></div>',
 			esc_html__( 'BLT Secure:', 'blt-secure' ),
-			esc_html__( 'the WordPress security keys changed, so the stored Cloudflare token could not be decrypted and was removed. Edge features are paused until you re-enter it.', 'blt-secure' ),
+			esc_html__( 'the WordPress security keys changed, so the stored credentials (Cloudflare token, GitHub updates token) could not be decrypted and were removed. Those features are paused until you re-enter them.', 'blt-secure' ),
 			esc_url( admin_url( 'admin.php?page=blt-secure&tab=cloudflare' ) ),
-			esc_html__( 'Re-enter token', 'blt-secure' )
+			esc_html__( 'Re-enter tokens', 'blt-secure' )
+		);
+	}
+
+	/**
+	 * Make the no-update-token state visible where it matters: without a
+	 * token, private-repo API calls 404 and update checks silently find
+	 * nothing, so the site would quietly fall behind.
+	 *
+	 * @return void
+	 */
+	public function update_token_notice() {
+		global $pagenow;
+
+		if ( ! current_user_can( 'manage_options' ) ) {
+			return;
+		}
+
+		$on_updates_screen = in_array( $pagenow, array( 'plugins.php', 'update-core.php' ), true );
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		$on_our_screen = 'admin.php' === $pagenow && isset( $_GET['page'] ) && 'blt-secure' === $_GET['page'];
+		if ( ! $on_updates_screen && ! $on_our_screen ) {
+			return;
+		}
+
+		if ( null === $this->plugin->updater || null !== $this->plugin->updater->token() ) {
+			return;
+		}
+
+		printf(
+			'<div class="notice notice-warning"><p><strong>%s</strong> %s <a href="%s">%s</a></p></div>',
+			esc_html__( 'BLT Secure:', 'blt-secure' ),
+			esc_html__( 'plugin updates cannot be checked — no GitHub access token is configured. Add one on the Advanced tab, or define BLT_SECURE_GITHUB_TOKEN in wp-config.php.', 'blt-secure' ),
+			esc_url( admin_url( 'admin.php?page=blt-secure&tab=advanced' ) ),
+			esc_html__( 'Add token', 'blt-secure' )
 		);
 	}
 
@@ -385,6 +422,75 @@ class Blt_Secure_Admin {
 				'record'  => $result,
 			)
 		);
+	}
+
+	/**
+	 * Save the GitHub updates token after proving it can see the repo.
+	 *
+	 * @return void
+	 */
+	public function ajax_gh_save_token() {
+		$this->guard();
+
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- guard() ran check_ajax_referer.
+		$token = isset( $_POST['token'] ) ? sanitize_text_field( wp_unslash( $_POST['token'] ) ) : '';
+		if ( '' === $token ) {
+			wp_send_json_error( array( 'message' => __( 'Token is empty.', 'blt-secure' ) ) );
+		}
+
+		if ( ! $this->plugin->credentials->is_available() ) {
+			wp_send_json_error( array( 'message' => __( 'This server has no authenticated-encryption support (libsodium or OpenSSL AES-GCM); the token cannot be stored safely and was NOT saved.', 'blt-secure' ) ) );
+		}
+
+		// Verify the token can actually read the plugin repo before storing.
+		$repo_path = trim( (string) wp_parse_url( Blt_Secure_Updater::REPO_URL, PHP_URL_PATH ), '/' );
+		$response  = wp_remote_get(
+			'https://api.github.com/repos/' . $repo_path,
+			array(
+				'timeout' => 15,
+				'headers' => array(
+					'Authorization' => 'Bearer ' . $token,
+					'Accept'        => 'application/vnd.github+json',
+				),
+			)
+		);
+
+		if ( is_wp_error( $response ) ) {
+			wp_send_json_error( array( 'message' => $response->get_error_message() ) );
+		}
+		$status = (int) wp_remote_retrieve_response_code( $response );
+		if ( 200 !== $status ) {
+			wp_send_json_error(
+				array(
+					'message' => sprintf(
+						/* translators: 1: repository path, 2: HTTP status code */
+						__( 'GitHub rejected the token for %1$s (HTTP %2$d). Use a fine-grained personal access token with read-only Contents permission on that repository.', 'blt-secure' ),
+						$repo_path,
+						$status
+					),
+				)
+			);
+		}
+
+		$stored = $this->plugin->credentials->set( Blt_Secure_Updater::TOKEN_KEY, $token );
+		if ( is_wp_error( $stored ) ) {
+			wp_send_json_error( array( 'message' => $stored->get_error_message() ) );
+		}
+
+		wp_send_json_success( array( 'message' => __( 'Token verified and stored encrypted. Update checks are now enabled.', 'blt-secure' ) ) );
+	}
+
+	/**
+	 * Forget the GitHub updates token.
+	 *
+	 * @return void
+	 */
+	public function ajax_gh_delete_token() {
+		$this->guard();
+
+		$this->plugin->credentials->delete( Blt_Secure_Updater::TOKEN_KEY );
+
+		wp_send_json_success( array( 'message' => __( 'Token removed. Update checks against the private repository will stop working.', 'blt-secure' ) ) );
 	}
 
 	/**

@@ -53,6 +53,11 @@ if ( ! empty( $blt_secure_advanced['delete_data_on_uninstall'] ) ) {
 	delete_option( 'blt_secure_cf_ips' );
 	delete_option( 'blt_secure_crypto_check' );
 	delete_option( 'blt_secure_cred_cf_token' );
+	delete_option( 'blt_secure_cred_github_token' );
+
+	// plugin-update-checker state.
+	delete_option( 'external_updates-blt-secure' );
+	wp_clear_scheduled_hook( 'puc_cron_check_updates-blt-secure' );
 
 	// Per-user 2FA data.
 	delete_metadata( 'user', 0, '_blt_secure_totp_secret', '', true );

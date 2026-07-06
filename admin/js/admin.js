@@ -74,6 +74,41 @@
 		} );
 	}
 
+	// GitHub updates token (Advanced tab) — same flow as the CF token.
+	var ghConnectBtn = document.getElementById( 'blt-gh-connect' );
+	if ( ghConnectBtn ) {
+		ghConnectBtn.addEventListener( 'click', function () {
+			var tokenInput = document.getElementById( 'blt-gh-token' );
+			var status = document.getElementById( 'blt-gh-status' );
+
+			ghConnectBtn.disabled = true;
+			setMessage( status, cfg.i18n.working, false );
+
+			post( 'blt_secure_gh_save_token', { token: tokenInput.value } ).then( function ( json ) {
+				if ( json.success ) {
+					setMessage( status, json.data.message, false );
+					window.location.reload();
+				} else {
+					ghConnectBtn.disabled = false;
+					setMessage( status, json.data.message, true );
+				}
+			} ).catch( function () {
+				ghConnectBtn.disabled = false;
+				setMessage( status, cfg.i18n.error, true );
+			} );
+		} );
+	}
+
+	var ghDisconnectBtn = document.getElementById( 'blt-gh-disconnect' );
+	if ( ghDisconnectBtn ) {
+		ghDisconnectBtn.addEventListener( 'click', function () {
+			ghDisconnectBtn.disabled = true;
+			post( 'blt_secure_gh_delete_token', {} ).then( function () {
+				window.location.reload();
+			} );
+		} );
+	}
+
 	// Deploy / remove cards.
 	document.querySelectorAll( '.blt-card' ).forEach( function ( card ) {
 		var feature = card.getAttribute( 'data-feature' );

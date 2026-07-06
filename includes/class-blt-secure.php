@@ -50,6 +50,13 @@ final class Blt_Secure {
 	public $modules = array();
 
 	/**
+	 * Update checker wiring (null on front-end requests).
+	 *
+	 * @var Blt_Secure_Updater|null
+	 */
+	public $updater = null;
+
+	/**
 	 * Get the shared instance.
 	 *
 	 * @return Blt_Secure
@@ -126,6 +133,11 @@ final class Blt_Secure {
 		}
 
 		$this->ip_resolver->boot();
+
+		if ( Blt_Secure_Updater::should_load() ) {
+			$this->updater = new Blt_Secure_Updater( $this->credentials );
+			$this->updater->boot();
+		}
 
 		if ( is_admin() ) {
 			require_once BLT_SECURE_DIR . 'admin/class-admin.php';

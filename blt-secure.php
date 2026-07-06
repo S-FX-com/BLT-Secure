@@ -39,6 +39,7 @@ require_once BLT_SECURE_DIR . 'includes/modules/class-file-guard.php';
 require_once BLT_SECURE_DIR . 'includes/modules/class-login-hardening.php';
 require_once BLT_SECURE_DIR . 'includes/modules/class-totp.php';
 require_once BLT_SECURE_DIR . 'includes/modules/class-two-factor.php';
+require_once BLT_SECURE_DIR . 'includes/class-updater.php';
 require_once BLT_SECURE_DIR . 'includes/class-blt-secure.php';
 
 /**

@@ -150,6 +150,16 @@ class Blt_Secure_Encrypted_Option_Store implements Blt_Secure_Credential_Store {
 	}
 
 	/**
+	 * Known credential keys — every key any consumer stores must be listed
+	 * so salt rotation wipes them all (they are unrecoverable).
+	 *
+	 * @return string[]
+	 */
+	public static function known_keys() {
+		return array( 'cf_token', 'github_token' );
+	}
+
+	/**
 	 * Salt rotation detected: wipe every stored credential (they are
 	 * unrecoverable) and flag for the admin notice.
 	 *
@@ -158,6 +168,8 @@ class Blt_Secure_Encrypted_Option_Store implements Blt_Secure_Credential_Store {
 	private function invalidate() {
 		$this->invalidated = true;
 		delete_option( self::CANARY_OPTION );
-		delete_option( self::OPTION_PREFIX . 'cf_token' );
+		foreach ( self::known_keys() as $key ) {
+			delete_option( self::OPTION_PREFIX . $key );
+		}
 	}
 }
