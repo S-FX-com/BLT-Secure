@@ -1,0 +1,43 @@
+<?xml version="1.0"?>
+<ruleset name="BLT Secure">
+	<description>WordPress coding standards for BLT Secure.</description>
+
+	<file>.</file>
+	<exclude-pattern>*/vendor/*</exclude-pattern>
+	<exclude-pattern>*/node_modules/*</exclude-pattern>
+	<exclude-pattern>*/tests/*</exclude-pattern>
+	<exclude-pattern>*/includes/lib/*</exclude-pattern>
+	<exclude-pattern>*/.github/*</exclude-pattern>
+	<exclude-pattern>admin/js/qrcode.js</exclude-pattern>
+
+	<arg value="ps"/>
+	<arg name="extensions" value="php"/>
+	<arg name="parallel" value="4"/>
+
+	<config name="minimum_wp_version" value="6.0"/>
+
+	<rule ref="WordPress-Extra">
+		<!-- Short array syntax is fine; we target PHP 7.4+. -->
+		<exclude name="Universal.Arrays.DisallowShortArraySyntax"/>
+		<!-- Directory context already namespaces our files (includes/modules/class-totp.php). -->
+		<exclude name="WordPress.Files.FileName.InvalidClassFileName"/>
+	</rule>
+
+	<rule ref="WordPress.WP.I18n">
+		<properties>
+			<property name="text_domain" type="array">
+				<element value="blt-secure"/>
+			</property>
+		</properties>
+	</rule>
+
+	<rule ref="WordPress.NamingConventions.PrefixAllGlobals">
+		<properties>
+			<property name="prefixes" type="array">
+				<element value="blt_secure"/>
+				<element value="Blt_Secure"/>
+				<element value="BLT_SECURE"/>
+			</property>
+		</properties>
+	</rule>
+</ruleset>

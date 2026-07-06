@@ -1,0 +1,66 @@
+/**
+ * BLT Secure admin styles.
+ */
+
+.blt-secure-wrap .nav-tab-wrapper {
+	margin-bottom: 1.2em;
+}
+
+.blt-cards {
+	display: grid;
+	grid-template-columns: repeat( auto-fill, minmax( 320px, 1fr ) );
+	gap: 16px;
+	max-width: 1100px;
+	margin-top: 12px;
+}
+
+.blt-card {
+	background: #fff;
+	border: 1px solid #c3c4c7;
+	border-radius: 4px;
+	padding: 16px;
+	display: flex;
+	flex-direction: column;
+}
+
+.blt-card h3 {
+	margin: 0 0 8px;
+}
+
+.blt-card p {
+	margin: 0 0 12px;
+}
+
+.blt-card .blt-card-actions {
+	margin-top: auto;
+	margin-bottom: 0;
+}
+
+.blt-badge {
+	display: inline-block;
+	padding: 2px 8px;
+	border-radius: 10px;
+	background: #dcdcde;
+	color: #3c434a;
+	font-size: 12px;
+	font-weight: 600;
+}
+
+.blt-badge-ok {
+	background: #d5f5e3;
+	color: #00753a;
+}
+
+.blt-badge-warn {
+	background: #fcf0cd;
+	color: #8a6d00;
+}
+
+.blt-card-message {
+	display: inline-block;
+	margin-left: 8px;
+}
+
+.blt-waf-controls label {
+	margin-right: 16px;
+}

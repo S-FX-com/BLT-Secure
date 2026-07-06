@@ -1,0 +1,751 @@
+# Copyright (C) 2026 S-FX.com Small Business Solutions
+# This file is distributed under the GPL v2 or later.
+msgid ""
+msgstr ""
+"Project-Id-Version: BLT Secure 0.1.0\n"
+"Report-Msgid-Bugs-To: https://wordpress.org/support/plugin/blt-secure\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"POT-Creation-Date: 2026-07-06T23:46:06+00:00\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"X-Generator: WP-CLI 2.12.0\n"
+"X-Domain: blt-secure\n"
+
+#. Plugin Name of the plugin
+#: blt-secure.php
+#: admin/class-admin.php:69
+#: admin/class-admin.php:70
+#: admin/views/settings-page.php:22
+msgid "BLT Secure"
+msgstr ""
+
+#. Plugin URI of the plugin
+#: blt-secure.php
+msgid "https://s-fx.com/plugins/blt-secure/"
+msgstr ""
+
+#. Description of the plugin
+#: blt-secure.php
+msgid "WordPress hardening with Cloudflare edge enforcement — login protection, 2FA, security headers, and one-click WAF deployment."
+msgstr ""
+
+#. Author of the plugin
+#: blt-secure.php
+msgid "S-FX.com Small Business Solutions"
+msgstr ""
+
+#. Author URI of the plugin
+#: blt-secure.php
+msgid "https://s-fx.com/"
+msgstr ""
+
+#: admin/class-admin.php:171
+msgid "Working…"
+msgstr ""
+
+#: admin/class-admin.php:172
+#: admin/views/tab-cloudflare.php:105
+msgid "Deployed"
+msgstr ""
+
+#: admin/class-admin.php:173
+#: admin/views/tab-cloudflare.php:110
+msgid "Not deployed"
+msgstr ""
+
+#: admin/class-admin.php:174
+msgid "Error"
+msgstr ""
+
+#: admin/class-admin.php:191
+#: admin/class-admin.php:225
+msgid "BLT Secure:"
+msgstr ""
+
+#: admin/class-admin.php:192
+msgid "the WordPress security keys changed, so the stored credentials (Cloudflare token, GitHub updates token) could not be decrypted and were removed. Those features are paused until you re-enter them."
+msgstr ""
+
+#: admin/class-admin.php:194
+msgid "Re-enter tokens"
+msgstr ""
+
+#: admin/class-admin.php:226
+msgid "plugin updates cannot be checked — no GitHub access token is configured. Add one on the Advanced tab, or define BLT_SECURE_GITHUB_TOKEN in wp-config.php."
+msgstr ""
+
+#: admin/class-admin.php:228
+msgid "Add token"
+msgstr ""
+
+#: admin/class-admin.php:245
+msgid "Hardening"
+msgstr ""
+
+#: admin/class-admin.php:246
+msgid "Login"
+msgstr ""
+
+#: admin/class-admin.php:247
+msgid "Cloudflare"
+msgstr ""
+
+#: admin/class-admin.php:248
+msgid "Advanced"
+msgstr ""
+
+#: admin/class-admin.php:270
+msgid "Managed WAF rules"
+msgstr ""
+
+#: admin/class-admin.php:271
+msgid "Cloudflare Managed Ruleset with the WordPress category emphasized, plus the OWASP Core Ruleset at paranoia level 2. Free-plan zones automatically get the Free Managed Ruleset instead."
+msgstr ""
+
+#: admin/class-admin.php:274
+msgid "Custom rules pack"
+msgstr ""
+
+#: admin/class-admin.php:275
+msgid "Challenge high-abuse hosting ASNs and TOR exits; block wp-config / .env / .git probes outright."
+msgstr ""
+
+#: admin/class-admin.php:278
+msgid "Login rate limiting"
+msgstr ""
+
+#: admin/class-admin.php:279
+msgid "5 requests per minute per IP on wp-login.php, xmlrpc.php, and your custom login slug; violators blocked for 10 minutes at the edge."
+msgstr ""
+
+#: admin/class-admin.php:282
+msgid "Leaked-credential check"
+msgstr ""
+
+#: admin/class-admin.php:283
+msgid "Detects logins using breached username/password pairs on the WordPress login form and challenges them before they reach PHP."
+msgstr ""
+
+#: admin/class-admin.php:286
+msgid "Cloudflare Access (Zero Trust)"
+msgstr ""
+
+#: admin/class-admin.php:287
+msgid "Puts wp-admin and your login URL behind Cloudflare Access with an email allow-list. An admin-ajax.php bypass is created automatically so front-end features keep working. Requires the token to also carry Account → Access: Apps and Policies: Edit."
+msgstr ""
+
+#: admin/class-admin.php:304
+msgid "Insufficient permissions."
+msgstr ""
+
+#: admin/class-admin.php:316
+msgid "No Cloudflare token is configured."
+msgstr ""
+
+#: admin/class-admin.php:331
+#: admin/class-admin.php:438
+msgid "Token is empty."
+msgstr ""
+
+#: admin/class-admin.php:335
+#: admin/class-admin.php:442
+msgid "This server has no authenticated-encryption support (libsodium or OpenSSL AES-GCM); the token cannot be stored safely and was NOT saved."
+msgstr ""
+
+#. translators: 1: zone name, 2: plan
+#: admin/class-admin.php:355
+#, php-format
+msgid "Connected to zone %1$s (%2$s plan)."
+msgstr ""
+
+#: admin/class-admin.php:375
+msgid "Token removed. Rules already deployed at Cloudflare were left untouched."
+msgstr ""
+
+#: admin/class-admin.php:388
+#: admin/class-admin.php:506
+msgid "Unknown feature."
+msgstr ""
+
+#: admin/class-admin.php:414
+msgid "Your token is missing a permission — edit it at dash.cloudflare.com → My Profile → API Tokens and add the permission named in the card description, then retry."
+msgstr ""
+
+#: admin/class-admin.php:421
+msgid "Deployed."
+msgstr ""
+
+#. translators: 1: repository path, 2: HTTP status code
+#: admin/class-admin.php:467
+#, php-format
+msgid "GitHub rejected the token for %1$s (HTTP %2$d). Use a fine-grained personal access token with read-only Contents permission on that repository."
+msgstr ""
+
+#: admin/class-admin.php:480
+msgid "Token verified and stored encrypted. Update checks are now enabled."
+msgstr ""
+
+#: admin/class-admin.php:493
+msgid "Token removed. Update checks against the private repository will stop working."
+msgstr ""
+
+#: admin/class-admin.php:519
+msgid "Removed."
+msgstr ""
+
+#: admin/views/tab-advanced.php:22
+msgid "Client IP detection"
+msgstr ""
+
+#: admin/views/tab-advanced.php:25
+msgid "Trust CF-Connecting-IP"
+msgstr ""
+
+#: admin/views/tab-advanced.php:28
+msgid "Auto — only when the request comes from Cloudflare’s published IP ranges (recommended)"
+msgstr ""
+
+#: admin/views/tab-advanced.php:29
+msgid "Always (only if Cloudflare fronts every request)"
+msgstr ""
+
+#: admin/views/tab-advanced.php:30
+msgid "Never (use REMOTE_ADDR)"
+msgstr ""
+
+#: admin/views/tab-advanced.php:32
+msgid "Affects the failed-login lockout: with the wrong setting behind a proxy, one attacker could lock out everyone (or no one)."
+msgstr ""
+
+#: admin/views/tab-advanced.php:37
+msgid "Uninstall behavior"
+msgstr ""
+
+#: admin/views/tab-advanced.php:40
+msgid "On uninstall"
+msgstr ""
+
+#: admin/views/tab-advanced.php:43
+msgid "Delete all plugin settings and user 2FA data when the plugin is uninstalled"
+msgstr ""
+
+#: admin/views/tab-advanced.php:45
+msgid "Also remove the Cloudflare rules this plugin deployed (best-effort; requires the stored token to still work)"
+msgstr ""
+
+#: admin/views/tab-advanced.php:46
+msgid "Deactivating the plugin never touches Cloudflare — removal is always an explicit action."
+msgstr ""
+
+#: admin/views/tab-advanced.php:54
+msgid "Plugin updates"
+msgstr ""
+
+#: admin/views/tab-advanced.php:57
+msgid "GitHub access token"
+msgstr ""
+
+#: admin/views/tab-advanced.php:62
+msgid "The token is provided by the BLT_SECURE_GITHUB_TOKEN constant in wp-config.php."
+msgstr ""
+
+#: admin/views/tab-advanced.php:67
+msgid "A token is stored encrypted; update checks against the private repository are enabled."
+msgstr ""
+
+#: admin/views/tab-advanced.php:69
+msgid "Remove token"
+msgstr ""
+
+#: admin/views/tab-advanced.php:71
+msgid "github_pat_…"
+msgstr ""
+
+#: admin/views/tab-advanced.php:72
+#: admin/views/tab-cloudflare.php:54
+msgid "Verify & save"
+msgstr ""
+
+#: admin/views/tab-advanced.php:75
+msgid "BLT Secure updates itself from a private GitHub repository. Create a fine-grained personal access token with read-only Contents permission on sfxdotcom/BLT-Secure (or a classic token with the repo scope). The token is stored encrypted. Alternatively, define BLT_SECURE_GITHUB_TOKEN in wp-config.php."
+msgstr ""
+
+#: admin/views/tab-advanced.php:82
+msgid "Recent security events"
+msgstr ""
+
+#: admin/views/tab-advanced.php:84
+msgid "No events recorded yet."
+msgstr ""
+
+#: admin/views/tab-advanced.php:89
+msgid "Time"
+msgstr ""
+
+#: admin/views/tab-advanced.php:90
+msgid "Event"
+msgstr ""
+
+#: admin/views/tab-advanced.php:91
+msgid "Details"
+msgstr ""
+
+#: admin/views/tab-cloudflare.php:23
+msgid "Connection"
+msgstr ""
+
+#: admin/views/tab-cloudflare.php:27
+msgid "This server has no authenticated-encryption support (libsodium or OpenSSL AES-GCM). A Cloudflare token cannot be stored safely, so edge features are unavailable."
+msgstr ""
+
+#: admin/views/tab-cloudflare.php:32
+msgid "Create a custom API token at dash.cloudflare.com → My Profile → API Tokens with: Zone → Zone: Read, Zone → Zone WAF: Edit (scoped to this site’s zone). Add Account → Access: Apps and Policies: Edit only if you want the Cloudflare Access feature."
+msgstr ""
+
+#: admin/views/tab-cloudflare.php:37
+msgid "API token"
+msgstr ""
+
+#. translators: 1: zone name, 2: plan name
+#: admin/views/tab-cloudflare.php:45
+#, php-format
+msgid "Connected to zone %1$s (%2$s plan). The token is stored encrypted."
+msgstr ""
+
+#: admin/views/tab-cloudflare.php:51
+msgid "Disconnect (forget token)"
+msgstr ""
+
+#: admin/views/tab-cloudflare.php:53
+msgid "Paste your zone-scoped API token"
+msgstr ""
+
+#: admin/views/tab-cloudflare.php:61
+msgid "Edge protections"
+msgstr ""
+
+#: admin/views/tab-cloudflare.php:63
+msgid "Connect a token above to enable one-click deployment."
+msgstr ""
+
+#: admin/views/tab-cloudflare.php:83
+msgid "OWASP paranoia:"
+msgstr ""
+
+#: admin/views/tab-cloudflare.php:90
+msgid "Sensitivity:"
+msgstr ""
+
+#: admin/views/tab-cloudflare.php:92
+msgid "Low (threshold 60)"
+msgstr ""
+
+#: admin/views/tab-cloudflare.php:93
+msgid "Medium (threshold 40)"
+msgstr ""
+
+#: admin/views/tab-cloudflare.php:94
+msgid "High (threshold 25)"
+msgstr ""
+
+#: admin/views/tab-cloudflare.php:102
+msgid "Update available"
+msgstr ""
+
+#: admin/views/tab-cloudflare.php:103
+msgid "Your login slug changed since this rule was deployed — redeploy to update it."
+msgstr ""
+
+#: admin/views/tab-cloudflare.php:107
+msgid "Free plan: the limited Free Managed Ruleset was deployed (paid managed rulesets need Pro or higher)."
+msgstr ""
+
+#: admin/views/tab-cloudflare.php:116
+msgid "Redeploy"
+msgstr ""
+
+#: admin/views/tab-cloudflare.php:116
+msgid "Deploy"
+msgstr ""
+
+#: admin/views/tab-cloudflare.php:119
+msgid "Remove"
+msgstr ""
+
+#: admin/views/tab-hardening.php:23
+msgid "Security headers"
+msgstr ""
+
+#: admin/views/tab-hardening.php:26
+msgid "Send security headers"
+msgstr ""
+
+#: admin/views/tab-hardening.php:29
+msgid "Enable this module (headers already sent by your host or Cloudflare are never duplicated)"
+msgstr ""
+
+#: admin/views/tab-hardening.php:33
+msgid "HSTS"
+msgstr ""
+
+#: admin/views/tab-hardening.php:36
+msgid "Strict-Transport-Security (sent only over HTTPS)"
+msgstr ""
+
+#: admin/views/tab-hardening.php:37
+msgid "max-age (seconds):"
+msgstr ""
+
+#: admin/views/tab-hardening.php:40
+msgid "includeSubDomains"
+msgstr ""
+
+#: admin/views/tab-hardening.php:42
+msgid "preload — effectively irreversible; only enable if you know what this means"
+msgstr ""
+
+#: admin/views/tab-hardening.php:46
+msgid "X-Frame-Options"
+msgstr ""
+
+#: admin/views/tab-hardening.php:51
+#: admin/views/tab-hardening.php:64
+msgid "Off"
+msgstr ""
+
+#: admin/views/tab-hardening.php:56
+msgid "Other headers"
+msgstr ""
+
+#: admin/views/tab-hardening.php:60
+msgid "Referrer-Policy:"
+msgstr ""
+
+#: admin/views/tab-hardening.php:71
+msgid "Content-Security-Policy"
+msgstr ""
+
+#: admin/views/tab-hardening.php:74
+msgid "Send CSP on the front-end (never sent inside wp-admin)"
+msgstr ""
+
+#: admin/views/tab-hardening.php:76
+msgid "Report-Only mode"
+msgstr ""
+
+#: admin/views/tab-hardening.php:77
+msgid "watch your browser console for violations before enforcing"
+msgstr ""
+
+#: admin/views/tab-hardening.php:83
+msgid "Privacy"
+msgstr ""
+
+#: admin/views/tab-hardening.php:86
+msgid "Fingerprinting"
+msgstr ""
+
+#: admin/views/tab-hardening.php:89
+msgid "Hide the WordPress version (generator tag and core asset ?ver=)"
+msgstr ""
+
+#: admin/views/tab-hardening.php:91
+msgid "Block user enumeration (?author=N and the REST users endpoint for visitors)"
+msgstr ""
+
+#: admin/views/tab-hardening.php:96
+msgid "XML-RPC"
+msgstr ""
+
+#: admin/views/tab-hardening.php:99
+msgid "XML-RPC services"
+msgstr ""
+
+#: admin/views/tab-hardening.php:102
+msgid "Allow XML-RPC (needed by Jetpack and the WordPress mobile apps; leave off otherwise)"
+msgstr ""
+
+#: admin/views/tab-hardening.php:107
+msgid "File guard"
+msgstr ""
+
+#: admin/views/tab-hardening.php:110
+msgid "File editing"
+msgstr ""
+
+#: admin/views/tab-hardening.php:115
+msgid "is already enabled in wp-config.php — nothing to do here."
+msgstr ""
+
+#: admin/views/tab-hardening.php:115
+msgid "is explicitly disabled in wp-config.php, which overrides this setting."
+msgstr ""
+
+#: admin/views/tab-hardening.php:119
+msgid "Disable the theme/plugin file editors in wp-admin"
+msgstr ""
+
+#: admin/views/tab-hardening.php:124
+msgid "File-manager plugins"
+msgstr ""
+
+#: admin/views/tab-hardening.php:127
+msgid "Block installation and activation of file-manager plugins (a common compromise vector)"
+msgstr ""
+
+#: admin/views/tab-login.php:21
+msgid "Login URL"
+msgstr ""
+
+#: admin/views/tab-login.php:24
+msgid "Custom login slug"
+msgstr ""
+
+#: admin/views/tab-login.php:27
+msgid "Login URL renaming is not available on multisite installations yet."
+msgstr ""
+
+#: admin/views/tab-login.php:29
+msgid "is set in wp-config.php — the custom slug is bypassed and wp-login.php works normally."
+msgstr ""
+
+#: admin/views/tab-login.php:32
+msgid "my-secret-login"
+msgstr ""
+
+#: admin/views/tab-login.php:34
+msgid "Leave empty to keep the default wp-login.php. When set, wp-login.php and unauthenticated wp-admin return 404. You will receive the new URL by email; bookmark it."
+msgstr ""
+
+#: admin/views/tab-login.php:41
+msgid "Failed-login lockout"
+msgstr ""
+
+#: admin/views/tab-login.php:44
+msgid "Lockout"
+msgstr ""
+
+#: admin/views/tab-login.php:47
+msgid "Temporarily block sign-in after repeated failures (counted per IP and per username)"
+msgstr ""
+
+#: admin/views/tab-login.php:51
+msgid "Attempts before lockout"
+msgstr ""
+
+#: admin/views/tab-login.php:57
+msgid "Lockout duration (minutes)"
+msgstr ""
+
+#: admin/views/tab-login.php:64
+msgid "Two-factor authentication"
+msgstr ""
+
+#: admin/views/tab-login.php:67
+msgid "Policy"
+msgstr ""
+
+#: admin/views/tab-login.php:70
+msgid "Optional (users opt in on their profile)"
+msgstr ""
+
+#: admin/views/tab-login.php:71
+msgid "Required for administrators"
+msgstr ""
+
+#: admin/views/tab-login.php:72
+msgid "Required for everyone"
+msgstr ""
+
+#: admin/views/tab-login.php:75
+msgid "Users covered by a “required” policy who have not enrolled yet see a persistent reminder — they are never locked out by the policy alone. Each user sets up 2FA on their own profile page."
+msgstr ""
+
+#: includes/cloudflare/class-cloudflare-api.php:144
+msgid "No Cloudflare zone matching this site was found with this token."
+msgstr ""
+
+#. translators: %d: HTTP status code
+#: includes/cloudflare/class-cloudflare-api.php:182
+#, php-format
+msgid "Cloudflare returned an unreadable response (HTTP %d)."
+msgstr ""
+
+#: includes/cloudflare/class-cloudflare-api.php:205
+msgid "Unknown Cloudflare API error."
+msgstr ""
+
+#: includes/cloudflare/class-cloudflare-deployer.php:88
+msgid "Cloudflare is not connected yet — verify your token first."
+msgstr ""
+
+#: includes/cloudflare/class-cloudflare-deployer.php:105
+#: includes/cloudflare/class-cloudflare-deployer.php:138
+msgid "Unknown Cloudflare feature."
+msgstr ""
+
+#: includes/cloudflare/class-cloudflare-deployer.php:411
+msgid "Cloudflare is not connected yet."
+msgstr ""
+
+#: includes/cloudflare/class-cloudflare-deployer.php:426
+msgid "No Cloudflare account id is known for this zone."
+msgstr ""
+
+#: includes/cloudflare/class-cloudflare-deployer.php:431
+msgid "At least one administrator email is required for the Access policy."
+msgstr ""
+
+#: includes/crypto/class-crypto.php:84
+msgid "No authenticated encryption backend (libsodium or OpenSSL AES-GCM) is available on this server."
+msgstr ""
+
+#: includes/crypto/class-crypto.php:99
+msgid "This value was encrypted with libsodium, which is no longer available."
+msgstr ""
+
+#: includes/crypto/class-crypto.php:123
+msgid "Unrecognized encrypted value format."
+msgstr ""
+
+#: includes/crypto/class-crypto.php:133
+msgid "Stored value could not be decrypted. The security keys in wp-config.php may have changed."
+msgstr ""
+
+#: includes/modules/class-file-guard.php:178
+msgid "BLT Secure blocks file-manager plugins: they are a common compromise vector. Contact your site administrator if you need file access."
+msgstr ""
+
+#: includes/modules/class-file-guard.php:196
+msgid "Blocked by BLT Secure"
+msgstr ""
+
+#: includes/modules/class-file-guard.php:233
+msgid "BLT Secure deactivated blocked file-manager plugin(s):"
+msgstr ""
+
+#: includes/modules/class-login-hardening.php:136
+msgid "That login slug is reserved or already used by a page; the login URL was not changed."
+msgstr ""
+
+#: includes/modules/class-login-hardening.php:220
+msgid "<strong>Error:</strong> Too many failed login attempts. Please try again later."
+msgstr ""
+
+#. translators: %s: new login URL
+#: includes/modules/class-login-hardening.php:481
+#, php-format
+msgid "Your login URL is now: %s — bookmark it. If you ever get locked out, add define( 'BLT_SECURE_DISABLE_SLUG', true ); to wp-config.php."
+msgstr ""
+
+#. translators: %s: site name
+#: includes/modules/class-login-hardening.php:491
+#, php-format
+msgid "[%s] Your login URL changed"
+msgstr ""
+
+#. translators: 1: new login URL, 2: escape hatch code
+#: includes/modules/class-login-hardening.php:496
+#, php-format
+msgid ""
+"BLT Secure changed this site's login URL to: %1$s\n"
+"\n"
+"If you are ever locked out, add this line to wp-config.php to restore the default login URL:\n"
+"\n"
+"%2$s\n"
+""
+msgstr ""
+
+#: includes/modules/class-privacy.php:177
+msgid "Sorry, you are not allowed to list users."
+msgstr ""
+
+#: includes/modules/class-two-factor.php:229
+msgid "Two-factor authentication is required; password-only API access is disabled for this account. Use an application password."
+msgstr ""
+
+#: includes/modules/class-two-factor.php:269
+msgid "Your login session expired. Please sign in again."
+msgstr ""
+
+#: includes/modules/class-two-factor.php:276
+msgid "Too many incorrect codes. Please sign in again."
+msgstr ""
+
+#: includes/modules/class-two-factor.php:283
+msgid "That code is incorrect or expired. Try the current code from your app, or a recovery code."
+msgstr ""
+
+#: includes/modules/class-two-factor.php:372
+#: includes/modules/class-two-factor.php:377
+msgid "Two-Factor Authentication"
+msgstr ""
+
+#: includes/modules/class-two-factor.php:389
+msgid "Enter the 6-digit code from your authenticator app, or a recovery code."
+msgstr ""
+
+#: includes/modules/class-two-factor.php:396
+msgid "Verify"
+msgstr ""
+
+#: includes/modules/class-two-factor.php:445
+msgid "Two-Factor Authentication (BLT Secure)"
+msgstr ""
+
+#: includes/modules/class-two-factor.php:449
+msgid "Status"
+msgstr ""
+
+#: includes/modules/class-two-factor.php:451
+msgid "Enabled"
+msgstr ""
+
+#. translators: %d: number of unused recovery codes
+#: includes/modules/class-two-factor.php:457
+#, php-format
+msgid "%d recovery codes remaining."
+msgstr ""
+
+#: includes/modules/class-two-factor.php:465
+msgid "Disable two-factor authentication"
+msgstr ""
+
+#: includes/modules/class-two-factor.php:488
+msgid "Set up"
+msgstr ""
+
+#: includes/modules/class-two-factor.php:490
+msgid "1. Scan this QR code with your authenticator app (or enter the key manually). 2. Enter the 6-digit code it shows. 3. Save your profile."
+msgstr ""
+
+#: includes/modules/class-two-factor.php:494
+msgid "Confirmation code"
+msgstr ""
+
+#: includes/modules/class-two-factor.php:550
+msgid "Two-factor setup: that code did not match — 2FA was NOT enabled. Re-scan and try again."
+msgstr ""
+
+#: includes/modules/class-two-factor.php:590
+msgid "Two-factor authentication is ON."
+msgstr ""
+
+#: includes/modules/class-two-factor.php:591
+msgid "Save these recovery codes somewhere safe — they are shown only once, and each works once:"
+msgstr ""
+
+#: includes/modules/class-two-factor.php:609
+msgid "Two-factor authentication is required for your account."
+msgstr ""
+
+#: includes/modules/class-two-factor.php:610
+msgid "Please set it up now:"
+msgstr ""
+
+#: includes/modules/class-two-factor.php:612
+msgid "Enable 2FA on your profile"
+msgstr ""

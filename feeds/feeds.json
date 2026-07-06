@@ -1,0 +1,33 @@
+{
+  "$comment": "BLT Secure pluggable feed sources (Phase 2). Each feed: id (unique slug), label, url, format (yara|ioc-json|ip-list), interval_hours, enabled, attribution. A feed can be disabled fleet-wide here without a plugin update. Loader lands in Phase 2; this file is inert in Phase 1.",
+  "schema_version": 1,
+  "feeds": [
+    {
+      "id": "pressidium-yara",
+      "label": "Pressidium WordPress/PHP YARA rules",
+      "url": "https://github.com/pressidium/pressidium-yara-rules",
+      "format": "yara",
+      "interval_hours": 24,
+      "enabled": false,
+      "attribution": "Pressidium, GPLv2+"
+    },
+    {
+      "id": "threatfox-ip",
+      "label": "abuse.ch ThreatFox IOC feed",
+      "url": "https://threatfox.abuse.ch/export/json/recent/",
+      "format": "ioc-json",
+      "interval_hours": 6,
+      "enabled": false,
+      "attribution": "abuse.ch ThreatFox, attribution requested"
+    },
+    {
+      "id": "spamhaus-drop",
+      "label": "Spamhaus DROP list",
+      "url": "https://www.spamhaus.org/drop/drop.txt",
+      "format": "ip-list",
+      "interval_hours": 12,
+      "enabled": false,
+      "attribution": "Spamhaus"
+    }
+  ]
+}
