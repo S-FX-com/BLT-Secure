@@ -375,6 +375,7 @@ $blt_test_requires = array(
 	'includes/modules/class-alerting.php',
 	'includes/modules/class-login-hardening.php',
 	'includes/class-ip-resolver.php',
+	'includes/class-updater.php',
 	'includes/cloudflare/rule-definitions.php',
 	'includes/cloudflare/class-cloudflare-api.php',
 	'includes/cloudflare/class-cloudflare-state.php',

@@ -1,4 +1,4 @@
-# Copyright (C) 2026 S-FX.com
+# Copyright (C) 2026 S-FX.com Small Business Solutions
 # This file is distributed under the GPL v2 or later.
 msgid ""
 msgstr ""
@@ -9,15 +9,15 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-07-06T13:16:58+00:00\n"
+"POT-Creation-Date: 2026-07-06T23:46:06+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: blt-secure\n"
 
 #. Plugin Name of the plugin
 #: blt-secure.php
-#: admin/class-admin.php:66
-#: admin/class-admin.php:67
+#: admin/class-admin.php:69
+#: admin/class-admin.php:70
 #: admin/views/settings-page.php:22
 msgid "BLT Secure"
 msgstr ""
@@ -34,7 +34,7 @@ msgstr ""
 
 #. Author of the plugin
 #: blt-secure.php
-msgid "S-FX.com"
+msgid "S-FX.com Small Business Solutions"
 msgstr ""
 
 #. Author URI of the plugin
@@ -42,132 +42,157 @@ msgstr ""
 msgid "https://s-fx.com/"
 msgstr ""
 
-#: admin/class-admin.php:168
+#: admin/class-admin.php:171
 msgid "Working…"
 msgstr ""
 
-#: admin/class-admin.php:169
+#: admin/class-admin.php:172
 #: admin/views/tab-cloudflare.php:105
 msgid "Deployed"
 msgstr ""
 
-#: admin/class-admin.php:170
+#: admin/class-admin.php:173
 #: admin/views/tab-cloudflare.php:110
 msgid "Not deployed"
 msgstr ""
 
-#: admin/class-admin.php:171
+#: admin/class-admin.php:174
 msgid "Error"
 msgstr ""
 
-#: admin/class-admin.php:188
+#: admin/class-admin.php:191
+#: admin/class-admin.php:225
 msgid "BLT Secure:"
 msgstr ""
 
-#: admin/class-admin.php:189
-msgid "the WordPress security keys changed, so the stored Cloudflare token could not be decrypted and was removed. Edge features are paused until you re-enter it."
+#: admin/class-admin.php:192
+msgid "the WordPress security keys changed, so the stored credentials (Cloudflare token, GitHub updates token) could not be decrypted and were removed. Those features are paused until you re-enter them."
 msgstr ""
 
-#: admin/class-admin.php:191
-msgid "Re-enter token"
+#: admin/class-admin.php:194
+msgid "Re-enter tokens"
 msgstr ""
 
-#: admin/class-admin.php:208
-msgid "Hardening"
+#: admin/class-admin.php:226
+msgid "plugin updates cannot be checked — no GitHub access token is configured. Add one on the Advanced tab, or define BLT_SECURE_GITHUB_TOKEN in wp-config.php."
 msgstr ""
 
-#: admin/class-admin.php:209
-msgid "Login"
-msgstr ""
-
-#: admin/class-admin.php:210
-msgid "Cloudflare"
-msgstr ""
-
-#: admin/class-admin.php:211
-msgid "Advanced"
-msgstr ""
-
-#: admin/class-admin.php:233
-msgid "Managed WAF rules"
-msgstr ""
-
-#: admin/class-admin.php:234
-msgid "Cloudflare Managed Ruleset with the WordPress category emphasized, plus the OWASP Core Ruleset at paranoia level 2. Free-plan zones automatically get the Free Managed Ruleset instead."
-msgstr ""
-
-#: admin/class-admin.php:237
-msgid "Custom rules pack"
-msgstr ""
-
-#: admin/class-admin.php:238
-msgid "Challenge high-abuse hosting ASNs and TOR exits; block wp-config / .env / .git probes outright."
-msgstr ""
-
-#: admin/class-admin.php:241
-msgid "Login rate limiting"
-msgstr ""
-
-#: admin/class-admin.php:242
-msgid "5 requests per minute per IP on wp-login.php, xmlrpc.php, and your custom login slug; violators blocked for 10 minutes at the edge."
+#: admin/class-admin.php:228
+msgid "Add token"
 msgstr ""
 
 #: admin/class-admin.php:245
-msgid "Leaked-credential check"
+msgid "Hardening"
 msgstr ""
 
 #: admin/class-admin.php:246
-msgid "Detects logins using breached username/password pairs on the WordPress login form and challenges them before they reach PHP."
+msgid "Login"
 msgstr ""
 
-#: admin/class-admin.php:249
-msgid "Cloudflare Access (Zero Trust)"
+#: admin/class-admin.php:247
+msgid "Cloudflare"
 msgstr ""
 
-#: admin/class-admin.php:250
-msgid "Puts wp-admin and your login URL behind Cloudflare Access with an email allow-list. An admin-ajax.php bypass is created automatically so front-end features keep working. Requires the token to also carry Account → Access: Apps and Policies: Edit."
+#: admin/class-admin.php:248
+msgid "Advanced"
 msgstr ""
 
-#: admin/class-admin.php:267
-msgid "Insufficient permissions."
+#: admin/class-admin.php:270
+msgid "Managed WAF rules"
+msgstr ""
+
+#: admin/class-admin.php:271
+msgid "Cloudflare Managed Ruleset with the WordPress category emphasized, plus the OWASP Core Ruleset at paranoia level 2. Free-plan zones automatically get the Free Managed Ruleset instead."
+msgstr ""
+
+#: admin/class-admin.php:274
+msgid "Custom rules pack"
+msgstr ""
+
+#: admin/class-admin.php:275
+msgid "Challenge high-abuse hosting ASNs and TOR exits; block wp-config / .env / .git probes outright."
+msgstr ""
+
+#: admin/class-admin.php:278
+msgid "Login rate limiting"
 msgstr ""
 
 #: admin/class-admin.php:279
+msgid "5 requests per minute per IP on wp-login.php, xmlrpc.php, and your custom login slug; violators blocked for 10 minutes at the edge."
+msgstr ""
+
+#: admin/class-admin.php:282
+msgid "Leaked-credential check"
+msgstr ""
+
+#: admin/class-admin.php:283
+msgid "Detects logins using breached username/password pairs on the WordPress login form and challenges them before they reach PHP."
+msgstr ""
+
+#: admin/class-admin.php:286
+msgid "Cloudflare Access (Zero Trust)"
+msgstr ""
+
+#: admin/class-admin.php:287
+msgid "Puts wp-admin and your login URL behind Cloudflare Access with an email allow-list. An admin-ajax.php bypass is created automatically so front-end features keep working. Requires the token to also carry Account → Access: Apps and Policies: Edit."
+msgstr ""
+
+#: admin/class-admin.php:304
+msgid "Insufficient permissions."
+msgstr ""
+
+#: admin/class-admin.php:316
 msgid "No Cloudflare token is configured."
 msgstr ""
 
-#: admin/class-admin.php:294
+#: admin/class-admin.php:331
+#: admin/class-admin.php:438
 msgid "Token is empty."
 msgstr ""
 
-#: admin/class-admin.php:298
+#: admin/class-admin.php:335
+#: admin/class-admin.php:442
 msgid "This server has no authenticated-encryption support (libsodium or OpenSSL AES-GCM); the token cannot be stored safely and was NOT saved."
 msgstr ""
 
 #. translators: 1: zone name, 2: plan
-#: admin/class-admin.php:318
+#: admin/class-admin.php:355
 #, php-format
 msgid "Connected to zone %1$s (%2$s plan)."
 msgstr ""
 
-#: admin/class-admin.php:338
+#: admin/class-admin.php:375
 msgid "Token removed. Rules already deployed at Cloudflare were left untouched."
 msgstr ""
 
-#: admin/class-admin.php:351
-#: admin/class-admin.php:400
+#: admin/class-admin.php:388
+#: admin/class-admin.php:506
 msgid "Unknown feature."
 msgstr ""
 
-#: admin/class-admin.php:377
+#: admin/class-admin.php:414
 msgid "Your token is missing a permission — edit it at dash.cloudflare.com → My Profile → API Tokens and add the permission named in the card description, then retry."
 msgstr ""
 
-#: admin/class-admin.php:384
+#: admin/class-admin.php:421
 msgid "Deployed."
 msgstr ""
 
-#: admin/class-admin.php:413
+#. translators: 1: repository path, 2: HTTP status code
+#: admin/class-admin.php:467
+#, php-format
+msgid "GitHub rejected the token for %1$s (HTTP %2$d). Use a fine-grained personal access token with read-only Contents permission on that repository."
+msgstr ""
+
+#: admin/class-admin.php:480
+msgid "Token verified and stored encrypted. Update checks are now enabled."
+msgstr ""
+
+#: admin/class-admin.php:493
+msgid "Token removed. Update checks against the private repository will stop working."
+msgstr ""
+
+#: admin/class-admin.php:519
 msgid "Removed."
 msgstr ""
 
@@ -216,22 +241,55 @@ msgid "Deactivating the plugin never touches Cloudflare — removal is always an
 msgstr ""
 
 #: admin/views/tab-advanced.php:54
-msgid "Recent security events"
+msgid "Plugin updates"
 msgstr ""
 
-#: admin/views/tab-advanced.php:56
-msgid "No events recorded yet."
-msgstr ""
-
-#: admin/views/tab-advanced.php:61
-msgid "Time"
+#: admin/views/tab-advanced.php:57
+msgid "GitHub access token"
 msgstr ""
 
 #: admin/views/tab-advanced.php:62
+msgid "The token is provided by the BLT_SECURE_GITHUB_TOKEN constant in wp-config.php."
+msgstr ""
+
+#: admin/views/tab-advanced.php:67
+msgid "A token is stored encrypted; update checks against the private repository are enabled."
+msgstr ""
+
+#: admin/views/tab-advanced.php:69
+msgid "Remove token"
+msgstr ""
+
+#: admin/views/tab-advanced.php:71
+msgid "github_pat_…"
+msgstr ""
+
+#: admin/views/tab-advanced.php:72
+#: admin/views/tab-cloudflare.php:54
+msgid "Verify & save"
+msgstr ""
+
+#: admin/views/tab-advanced.php:75
+msgid "BLT Secure updates itself from a private GitHub repository. Create a fine-grained personal access token with read-only Contents permission on sfxdotcom/BLT-Secure (or a classic token with the repo scope). The token is stored encrypted. Alternatively, define BLT_SECURE_GITHUB_TOKEN in wp-config.php."
+msgstr ""
+
+#: admin/views/tab-advanced.php:82
+msgid "Recent security events"
+msgstr ""
+
+#: admin/views/tab-advanced.php:84
+msgid "No events recorded yet."
+msgstr ""
+
+#: admin/views/tab-advanced.php:89
+msgid "Time"
+msgstr ""
+
+#: admin/views/tab-advanced.php:90
 msgid "Event"
 msgstr ""
 
-#: admin/views/tab-advanced.php:63
+#: admin/views/tab-advanced.php:91
 msgid "Details"
 msgstr ""
 
@@ -263,10 +321,6 @@ msgstr ""
 
 #: admin/views/tab-cloudflare.php:53
 msgid "Paste your zone-scoped API token"
-msgstr ""
-
-#: admin/views/tab-cloudflare.php:54
-msgid "Verify & save"
 msgstr ""
 
 #: admin/views/tab-cloudflare.php:61

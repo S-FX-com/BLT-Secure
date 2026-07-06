@@ -52,6 +52,19 @@ Create a **custom API token** at dash.cloudflare.com → My Profile → API Toke
 
 The token is stored encrypted (libsodium, key derived from your WP salts) in a non-autoloaded option. If your salts rotate, the plugin detects it and asks for the token again instead of failing silently.
 
+## Updates & releases
+
+Installed sites update straight from this private repo via the bundled [plugin-update-checker](https://github.com/YahnisElsts/plugin-update-checker) (MIT, vendored at `includes/lib/`). Each site needs a GitHub token that can read this repo:
+
+- **Per-site UI:** BLT Secure → Advanced → *GitHub access token* — a fine-grained PAT with read-only **Contents** permission on `sfxdotcom/BLT-Secure` (or a classic PAT with `repo` scope). Stored encrypted like the Cloudflare token.
+- **Fleet automation:** `define( 'BLT_SECURE_GITHUB_TOKEN', '…' );` in wp-config.php — the constant takes precedence over the stored token.
+
+Without a token, update checks against the private repo silently find nothing; the plugin shows a warning on the Plugins/Updates screens instead of letting sites quietly fall behind.
+
+**Release flow (automated):** every merge to `main` runs `.github/workflows/release.yml`, which bumps the version (patch by default — put `#minor` or `#major` in the merge commit message to bump higher, or use the manual *Release* workflow dispatch), commits the bump with `[skip ci]`, tags `vX.Y.Z`, builds the distribution zip per `.distignore` (stable `blt-secure/` top-level folder, verified to include PUC's internals and exclude dev files), and publishes a GitHub release with the zip attached. The update checker only accepts that zip asset (`blt-secure-X.Y.Z.zip`) — never source archives.
+
+If branch protection is ever enabled on `main`, grant the GitHub Actions app a ruleset bypass (or switch the workflow to a PAT secret) so the bot's version-bump push isn't rejected.
+
 ## Development
 
 No runtime Composer dependencies (target hosts include shared hosting without shell access). Dev tooling:

@@ -45,7 +45,10 @@
 - [ ] `curl -s -X POST /xmlrpc.php` → fault response.
 - [ ] Try installing wp-file-manager → blocked with notice.
 - [ ] Configure a real free-plan CF zone token → verify, deploy all five cards, confirm rules in CF dash, remove all five, confirm gone.
-- [ ] Deactivate → CF rules untouched, notice shown. Uninstall with cleanup opted in → options/meta gone.
+- [ ] Deactivate → CF rules untouched, notice shown. Uninstall with cleanup opted in → options/meta gone (including PUC's `external_updates-blt-secure` option and cron hook).
+- [ ] **Updates end-to-end:** install a CI-built release zip on staging, add a GitHub token (Advanced tab), force a check (Dashboard → Updates → "Check again"), confirm the update row shows the newer version + changelog, run the update, confirm the plugin folder is still `blt-secure/` and the plugin stays active.
+- [ ] No-token path: remove the token → warning notice appears on plugins.php/update-core.php, no PHP errors logged.
+- [ ] Release workflow dry run: temporarily add a `test/release-dry-run` branch trigger with `draft: true` on the release step, push, download + unzip-verify the draft asset, then remove the test trigger. (workflow_dispatch only appears once the workflow file is on main.)
 
 ## Phase 2 — Detection & Monitoring (not started)
 
