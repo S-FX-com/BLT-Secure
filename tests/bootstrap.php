@@ -142,6 +142,136 @@ if ( ! function_exists( 'apply_filters' ) ) {
 	}
 }
 
+if ( ! function_exists( 'add_action' ) ) {
+	/**
+	 * WP shim — no-op.
+	 */
+	function add_action() {}
+}
+
+if ( ! function_exists( 'add_filter' ) ) {
+	/**
+	 * WP shim — no-op.
+	 */
+	function add_filter() {}
+}
+
+if ( ! function_exists( 'do_action' ) ) {
+	/**
+	 * WP shim — no-op.
+	 */
+	function do_action() {}
+}
+
+if ( ! function_exists( 'wp_unslash' ) ) {
+	/**
+	 * WP shim.
+	 *
+	 * @param mixed $value Value.
+	 * @return mixed
+	 */
+	function wp_unslash( $value ) {
+		return is_string( $value ) ? stripslashes( $value ) : $value;
+	}
+}
+
+if ( ! function_exists( 'sanitize_text_field' ) ) {
+	/**
+	 * WP shim.
+	 *
+	 * @param string $str Value.
+	 * @return string
+	 */
+	function sanitize_text_field( $str ) {
+		return trim( preg_replace( '/[\r\n\t ]+/', ' ', wp_strip_all_tags( (string) $str ) ) );
+	}
+}
+
+if ( ! function_exists( 'wp_strip_all_tags' ) ) {
+	/**
+	 * WP shim.
+	 *
+	 * @param string $text Value.
+	 * @return string
+	 */
+	function wp_strip_all_tags( $text ) {
+		return strip_tags( (string) $text ); // phpcs:ignore
+	}
+}
+
+if ( ! function_exists( 'sanitize_user' ) ) {
+	/**
+	 * WP shim.
+	 *
+	 * @param string $username Value.
+	 * @return string
+	 */
+	function sanitize_user( $username ) {
+		return preg_replace( '/[^a-zA-Z0-9 _.\-@]/', '', (string) $username );
+	}
+}
+
+if ( ! function_exists( 'absint' ) ) {
+	/**
+	 * WP shim.
+	 *
+	 * @param mixed $maybeint Value.
+	 * @return int
+	 */
+	function absint( $maybeint ) {
+		return abs( (int) $maybeint );
+	}
+}
+
+if ( ! defined( 'MINUTE_IN_SECONDS' ) ) {
+	define( 'MINUTE_IN_SECONDS', 60 );
+	define( 'HOUR_IN_SECONDS', 3600 );
+	define( 'DAY_IN_SECONDS', 86400 );
+}
+
+// In-memory transients for lockout tests.
+$GLOBALS['blt_test_transients'] = array();
+
+if ( ! function_exists( 'get_transient' ) ) {
+	/**
+	 * WP shim.
+	 *
+	 * @param string $key Key.
+	 * @return mixed
+	 */
+	function get_transient( $key ) {
+		return array_key_exists( $key, $GLOBALS['blt_test_transients'] ) ? $GLOBALS['blt_test_transients'][ $key ] : false;
+	}
+}
+
+if ( ! function_exists( 'set_transient' ) ) {
+	/**
+	 * WP shim — TTL ignored (state machine only).
+	 *
+	 * @param string $key Key.
+	 * @param mixed  $value Value.
+	 * @param int    $ttl TTL.
+	 * @return bool
+	 */
+	function set_transient( $key, $value, $ttl = 0 ) { // phpcs:ignore
+		$GLOBALS['blt_test_transients'][ $key ] = $value;
+		return true;
+	}
+}
+
+if ( ! function_exists( 'delete_transient' ) ) {
+	/**
+	 * WP shim.
+	 *
+	 * @param string $key Key.
+	 * @return bool
+	 */
+	function delete_transient( $key ) {
+		unset( $GLOBALS['blt_test_transients'][ $key ] );
+		return true;
+	}
+}
+
 // In-memory options for store tests.
 $GLOBALS['blt_test_options'] = array();
 
@@ -187,10 +317,14 @@ if ( ! function_exists( 'delete_option' ) ) {
 }
 
 $blt_test_requires = array(
+	'includes/interface-blt-module.php',
+	'includes/class-options.php',
 	'includes/crypto/class-crypto.php',
 	'includes/crypto/interface-credential-store.php',
 	'includes/crypto/class-encrypted-option-store.php',
 	'includes/modules/class-totp.php',
+	'includes/modules/class-alerting.php',
+	'includes/modules/class-login-hardening.php',
 	'includes/class-ip-resolver.php',
 	'includes/cloudflare/rule-definitions.php',
 );
