@@ -6,6 +6,8 @@
 	<exclude-pattern>*/vendor/*</exclude-pattern>
 	<exclude-pattern>*/node_modules/*</exclude-pattern>
 	<exclude-pattern>*/tests/*</exclude-pattern>
+	<exclude-pattern>*/includes/lib/*</exclude-pattern>
+	<exclude-pattern>*/.github/*</exclude-pattern>
 	<exclude-pattern>admin/js/qrcode.js</exclude-pattern>
 
 	<arg value="ps"/>
