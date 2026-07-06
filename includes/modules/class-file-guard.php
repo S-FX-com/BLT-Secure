@@ -61,7 +61,7 @@ class Blt_Secure_File_Guard implements Blt_Secure_Module {
 	 */
 	public function defaults() {
 		return array(
-			'disallow_file_edit' => true,
+			'disallow_file_edit'  => true,
 			'block_file_managers' => true,
 		);
 	}

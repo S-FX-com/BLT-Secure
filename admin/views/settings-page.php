@@ -24,10 +24,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 	<?php settings_errors( 'blt_secure_settings' ); ?>
 
 	<nav class="nav-tab-wrapper">
-		<?php foreach ( $tabs as $slug => $label ) : ?>
-			<a href="<?php echo esc_url( admin_url( 'admin.php?page=blt-secure&tab=' . $slug ) ); ?>"
-				class="nav-tab <?php echo $tab === $slug ? 'nav-tab-active' : ''; ?>">
-				<?php echo esc_html( $label ); ?>
+		<?php foreach ( $tabs as $blt_secure_slug => $blt_secure_label ) : ?>
+			<a href="<?php echo esc_url( admin_url( 'admin.php?page=blt-secure&tab=' . $blt_secure_slug ) ); ?>"
+				class="nav-tab <?php echo $tab === $blt_secure_slug ? 'nav-tab-active' : ''; ?>">
+				<?php echo esc_html( $blt_secure_label ); ?>
 			</a>
 		<?php endforeach; ?>
 	</nav>

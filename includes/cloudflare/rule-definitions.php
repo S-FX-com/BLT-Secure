@@ -21,10 +21,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 class Blt_Secure_Rule_Definitions {
 
 	// Cloudflare-published managed ruleset IDs (stable, documented).
-	const RULESET_CF_MANAGED   = 'efb7b8c949ac4650a09736fc376e9aee';
-	const RULESET_OWASP        = '4814384a9e5d4991b9815dcfc25d2f1f';
-	const RULESET_CF_FREE      = '77454fe2d30c4220b5701f6fdfb893ba';
-	const OWASP_SCORE_RULE_ID  = '6179ae15870a4bb7b2d480d4843b323c';
+	const RULESET_CF_MANAGED  = 'efb7b8c949ac4650a09736fc376e9aee';
+	const RULESET_OWASP       = '4814384a9e5d4991b9815dcfc25d2f1f';
+	const RULESET_CF_FREE     = '77454fe2d30c4220b5701f6fdfb893ba';
+	const OWASP_SCORE_RULE_ID = '6179ae15870a4bb7b2d480d4843b323c';
 
 	const PHASE_MANAGED   = 'http_request_firewall_managed';
 	const PHASE_CUSTOM    = 'http_request_firewall_custom';
@@ -251,14 +251,14 @@ class Blt_Secure_Rule_Definitions {
 		$login_path = '' !== $login_slug ? '/' . ltrim( $login_slug, '/' ) : '/wp-login.php';
 
 		return array(
-			'type'                => 'self_hosted',
-			'name'                => '[BLT Secure] WordPress Admin',
-			'domain'              => $host . '/wp-admin',
-			'self_hosted_domains' => array(
+			'type'                 => 'self_hosted',
+			'name'                 => '[BLT Secure] WordPress Admin',
+			'domain'               => $host . '/wp-admin',
+			'self_hosted_domains'  => array(
 				$host . '/wp-admin',
 				$host . $login_path,
 			),
-			'session_duration'    => '24h',
+			'session_duration'     => '24h',
 			'app_launcher_visible' => false,
 		);
 	}
@@ -294,14 +294,14 @@ class Blt_Secure_Rule_Definitions {
 	 */
 	public static function access_bypass_app( $host ) {
 		return array(
-			'type'                => 'self_hosted',
-			'name'                => '[BLT Secure] WordPress admin-ajax bypass',
-			'domain'              => $host . '/wp-admin/admin-ajax.php',
-			'self_hosted_domains' => array(
+			'type'                 => 'self_hosted',
+			'name'                 => '[BLT Secure] WordPress admin-ajax bypass',
+			'domain'               => $host . '/wp-admin/admin-ajax.php',
+			'self_hosted_domains'  => array(
 				$host . '/wp-admin/admin-ajax.php',
 				$host . '/wp-admin/admin-post.php',
 			),
-			'session_duration'    => '24h',
+			'session_duration'     => '24h',
 			'app_launcher_visible' => false,
 		);
 	}

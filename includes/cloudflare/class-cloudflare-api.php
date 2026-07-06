@@ -123,9 +123,10 @@ class Blt_Secure_Cloudflare_Api {
 	 * @return array|WP_Error Zone object (id, name, account.id, plan).
 	 */
 	public function discover_zone( $host ) {
-		$labels = explode( '.', strtolower( (string) $host ) );
+		$labels    = explode( '.', strtolower( (string) $host ) );
+		$remaining = count( $labels );
 
-		while ( count( $labels ) >= 2 ) {
+		while ( $remaining >= 2 ) {
 			$candidate = implode( '.', $labels );
 			$result    = $this->get( '/zones', array( 'name' => $candidate ) );
 
@@ -137,6 +138,7 @@ class Blt_Secure_Cloudflare_Api {
 			}
 
 			array_shift( $labels );
+			--$remaining;
 		}
 
 		return new WP_Error( 'blt_cf_no_zone', __( 'No Cloudflare zone matching this site was found with this token.', 'blt-secure' ) );
@@ -204,25 +206,60 @@ class Blt_Secure_Cloudflare_Api {
 
 		// Token invalid / expired / malformed.
 		if ( in_array( $code, array( 10000, 10001, 6003 ), true ) || 401 === $status ) {
-			return new WP_Error( 'blt_cf_auth', $message, array( 'status' => $status, 'cf_code' => $code ) );
+			return new WP_Error(
+				'blt_cf_auth',
+				$message,
+				array(
+					'status'  => $status,
+					'cf_code' => $code,
+				)
+			);
 		}
 
 		// Authorized token, missing permission.
 		if ( 403 === $status || 10014 === $code ) {
-			return new WP_Error( 'blt_cf_scope', $message, array( 'status' => $status, 'cf_code' => $code ) );
+			return new WP_Error(
+				'blt_cf_scope',
+				$message,
+				array(
+					'status'  => $status,
+					'cf_code' => $code,
+				)
+			);
 		}
 
 		// Plan restrictions surface as ruleset validation refusals mentioning
 		// the plan, or dedicated codes on some endpoints.
 		if ( false !== stripos( $message, 'plan' ) || in_array( $code, array( 20040, 20041 ), true ) ) {
-			return new WP_Error( 'blt_cf_plan', $message, array( 'status' => $status, 'cf_code' => $code ) );
+			return new WP_Error(
+				'blt_cf_plan',
+				$message,
+				array(
+					'status'  => $status,
+					'cf_code' => $code,
+				)
+			);
 		}
 
 		// Ruleset engine validation.
 		if ( in_array( $code, array( 10021, 20217 ), true ) || 400 === $status ) {
-			return new WP_Error( 'blt_cf_validation', $message, array( 'status' => $status, 'cf_code' => $code ) );
+			return new WP_Error(
+				'blt_cf_validation',
+				$message,
+				array(
+					'status'  => $status,
+					'cf_code' => $code,
+				)
+			);
 		}
 
-		return new WP_Error( 'blt_cf_error', $message, array( 'status' => $status, 'cf_code' => $code ) );
+		return new WP_Error(
+			'blt_cf_error',
+			$message,
+			array(
+				'status'  => $status,
+				'cf_code' => $code,
+			)
+		);
 	}
 }

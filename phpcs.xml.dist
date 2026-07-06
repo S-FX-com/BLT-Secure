@@ -17,6 +17,8 @@
 	<rule ref="WordPress-Extra">
 		<!-- Short array syntax is fine; we target PHP 7.4+. -->
 		<exclude name="Universal.Arrays.DisallowShortArraySyntax"/>
+		<!-- Directory context already namespaces our files (includes/modules/class-totp.php). -->
+		<exclude name="WordPress.Files.FileName.InvalidClassFileName"/>
 	</rule>
 
 	<rule ref="WordPress.WP.I18n">

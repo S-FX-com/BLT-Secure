@@ -117,8 +117,8 @@ class Blt_Secure_Options {
 		if ( ! is_array( $saved ) ) {
 			$saved = array();
 		}
-		$saved[ $section ]        = $values;
-		$saved['schema_version']  = 1;
+		$saved[ $section ]       = $values;
+		$saved['schema_version'] = 1;
 		update_option( self::OPTION, $saved );
 		$this->settings = $saved;
 	}

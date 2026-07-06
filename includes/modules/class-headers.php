@@ -53,17 +53,17 @@ class Blt_Secure_Headers implements Blt_Secure_Module {
 	 */
 	public function defaults() {
 		return array(
-			'enabled'              => true,
-			'hsts'                 => false,
-			'hsts_max_age'         => 31536000,
-			'hsts_subdomains'      => false,
-			'hsts_preload'         => false,
-			'x_frame'              => 'SAMEORIGIN',
-			'nosniff'              => true,
-			'referrer_policy'      => 'strict-origin-when-cross-origin',
-			'csp_enabled'          => false,
-			'csp_report_only'      => true,
-			'csp_policy'           => self::CSP_STARTER,
+			'enabled'         => true,
+			'hsts'            => false,
+			'hsts_max_age'    => 31536000,
+			'hsts_subdomains' => false,
+			'hsts_preload'    => false,
+			'x_frame'         => 'SAMEORIGIN',
+			'nosniff'         => true,
+			'referrer_policy' => 'strict-origin-when-cross-origin',
+			'csp_enabled'     => false,
+			'csp_report_only' => true,
+			'csp_policy'      => self::CSP_STARTER,
 		);
 	}
 

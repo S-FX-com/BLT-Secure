@@ -289,7 +289,7 @@ class Blt_Secure_Admin {
 	public function ajax_save_token() {
 		$this->guard();
 
-		$token = isset( $_POST['token'] ) ? sanitize_text_field( wp_unslash( $_POST['token'] ) ) : '';
+		$token = isset( $_POST['token'] ) ? sanitize_text_field( wp_unslash( $_POST['token'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Missing -- guard() ran check_ajax_referer.
 		if ( '' === $token ) {
 			wp_send_json_error( array( 'message' => __( 'Token is empty.', 'blt-secure' ) ) );
 		}
@@ -346,7 +346,7 @@ class Blt_Secure_Admin {
 	public function ajax_deploy() {
 		$this->guard();
 
-		$feature = isset( $_POST['feature'] ) ? sanitize_key( wp_unslash( $_POST['feature'] ) ) : '';
+		$feature = isset( $_POST['feature'] ) ? sanitize_key( wp_unslash( $_POST['feature'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Missing -- guard() ran check_ajax_referer.
 		if ( ! in_array( $feature, Blt_Secure_Cloudflare_Deployer::FEATURES, true ) ) {
 			wp_send_json_error( array( 'message' => __( 'Unknown feature.', 'blt-secure' ) ) );
 		}
@@ -360,12 +360,14 @@ class Blt_Secure_Admin {
 			'login_slug' => (string) $this->plugin->options->get( 'login', 'slug', '' ),
 			'emails'     => array( get_option( 'admin_email' ) ),
 		);
+		// phpcs:disable WordPress.Security.NonceVerification.Missing -- guard() ran check_ajax_referer.
 		if ( isset( $_POST['paranoia'] ) ) {
 			$config['paranoia'] = absint( wp_unslash( $_POST['paranoia'] ) );
 		}
 		if ( isset( $_POST['score_threshold'] ) ) {
 			$config['score_threshold'] = absint( wp_unslash( $_POST['score_threshold'] ) );
 		}
+		// phpcs:enable WordPress.Security.NonceVerification.Missing
 
 		$result = $deployer->deploy( $feature, $config );
 
@@ -393,7 +395,7 @@ class Blt_Secure_Admin {
 	public function ajax_remove() {
 		$this->guard();
 
-		$feature = isset( $_POST['feature'] ) ? sanitize_key( wp_unslash( $_POST['feature'] ) ) : '';
+		$feature = isset( $_POST['feature'] ) ? sanitize_key( wp_unslash( $_POST['feature'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Missing -- guard() ran check_ajax_referer.
 		if ( ! in_array( $feature, Blt_Secure_Cloudflare_Deployer::FEATURES, true ) ) {
 			wp_send_json_error( array( 'message' => __( 'Unknown feature.', 'blt-secure' ) ) );
 		}
