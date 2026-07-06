@@ -272,6 +272,55 @@ if ( ! function_exists( 'delete_transient' ) ) {
 	}
 }
 
+if ( ! function_exists( 'wp_json_encode' ) ) {
+	/**
+	 * WP shim.
+	 *
+	 * @param mixed $data Data.
+	 * @return string|false
+	 */
+	function wp_json_encode( $data ) {
+		return json_encode( $data ); // phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode
+	}
+}
+
+if ( ! function_exists( 'wp_remote_retrieve_response_code' ) ) {
+	/**
+	 * WP shim.
+	 *
+	 * @param array $response Response array.
+	 * @return int|string
+	 */
+	function wp_remote_retrieve_response_code( $response ) {
+		return isset( $response['response']['code'] ) ? $response['response']['code'] : '';
+	}
+}
+
+if ( ! function_exists( 'wp_remote_retrieve_body' ) ) {
+	/**
+	 * WP shim.
+	 *
+	 * @param array $response Response array.
+	 * @return string
+	 */
+	function wp_remote_retrieve_body( $response ) {
+		return isset( $response['body'] ) ? $response['body'] : '';
+	}
+}
+
+if ( ! function_exists( 'sanitize_email' ) ) {
+	/**
+	 * WP shim.
+	 *
+	 * @param string $email Email.
+	 * @return string
+	 */
+	function sanitize_email( $email ) {
+		$email = filter_var( (string) $email, FILTER_VALIDATE_EMAIL );
+		return false === $email ? '' : $email;
+	}
+}
+
 // In-memory options for store tests.
 $GLOBALS['blt_test_options'] = array();
 
@@ -327,6 +376,9 @@ $blt_test_requires = array(
 	'includes/modules/class-login-hardening.php',
 	'includes/class-ip-resolver.php',
 	'includes/cloudflare/rule-definitions.php',
+	'includes/cloudflare/class-cloudflare-api.php',
+	'includes/cloudflare/class-cloudflare-state.php',
+	'includes/cloudflare/class-cloudflare-deployer.php',
 );
 foreach ( $blt_test_requires as $blt_test_file ) {
 	if ( file_exists( BLT_SECURE_DIR . $blt_test_file ) ) {
