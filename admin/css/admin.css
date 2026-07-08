@@ -66,6 +66,136 @@
 }
 
 /* -------------------------------------------------------------------------
+ * Settings — section cards, setting rows, toggle switches
+ * ---------------------------------------------------------------------- */
+
+.blt-section {
+	background: #fff;
+	border: 1px solid #c3c4c7;
+	border-radius: 6px;
+	margin: 0 0 20px;
+	max-width: 900px;
+}
+
+.blt-section > h2 {
+	margin: 0;
+	padding: 14px 20px;
+	border-bottom: 1px solid #e6e6e6;
+	font-size: 15px;
+}
+
+.blt-section-desc {
+	margin: 0;
+	padding: 12px 20px 0;
+	color: #646970;
+}
+
+.blt-setting {
+	display: flex;
+	gap: 24px;
+	align-items: flex-start;
+	justify-content: space-between;
+	padding: 16px 20px;
+	border-bottom: 1px solid #f0f0f1;
+}
+
+.blt-setting:last-child {
+	border-bottom: 0;
+}
+
+.blt-setting-info {
+	flex: 1 1 auto;
+	min-width: 0;
+}
+
+.blt-setting-title {
+	font-weight: 600;
+	margin: 0 0 4px;
+}
+
+.blt-setting-desc {
+	color: #646970;
+	margin: 0;
+	font-size: 13px;
+}
+
+.blt-setting-desc code {
+	font-size: 12px;
+}
+
+.blt-setting-control {
+	flex: 0 0 auto;
+	padding-top: 2px;
+}
+
+.blt-subfields {
+	margin: 12px 0 0;
+	padding: 12px 0 0;
+	border-top: 1px dashed #e6e6e6;
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+
+.blt-subfields label {
+	display: block;
+}
+
+/* Toggle switch (wraps a checkbox, keeps the native input for the form). */
+.blt-switch {
+	position: relative;
+	display: inline-block;
+	width: 44px;
+	height: 24px;
+	flex: 0 0 auto;
+}
+
+.blt-switch input {
+	position: absolute;
+	opacity: 0;
+	width: 0;
+	height: 0;
+}
+
+.blt-switch .blt-slider {
+	position: absolute;
+	inset: 0;
+	background: #c3c4c7;
+	border-radius: 24px;
+	transition: background-color 0.15s ease;
+	cursor: pointer;
+}
+
+.blt-switch .blt-slider::before {
+	content: "";
+	position: absolute;
+	height: 18px;
+	width: 18px;
+	left: 3px;
+	top: 3px;
+	background: #fff;
+	border-radius: 50%;
+	transition: transform 0.15s ease;
+}
+
+.blt-switch input:checked + .blt-slider {
+	background: #2271b1;
+}
+
+.blt-switch input:checked + .blt-slider::before {
+	transform: translateX(20px);
+}
+
+.blt-switch input:focus-visible + .blt-slider {
+	box-shadow: 0 0 0 2px #fff, 0 0 0 4px #2271b1;
+}
+
+.blt-switch input:disabled + .blt-slider {
+	opacity: 0.5;
+	cursor: default;
+}
+
+/* -------------------------------------------------------------------------
  * Health Check
  * ---------------------------------------------------------------------- */
 

@@ -17,117 +17,145 @@ $blt_secure_xmlrpc    = $options->section( 'xmlrpc' );
 $blt_secure_fileguard = $options->section( 'fileguard' );
 $blt_secure_opt       = Blt_Secure_Options::OPTION;
 ?>
-<form method="post" action="options.php">
+<form method="post" action="options.php" class="blt-settings">
 	<?php settings_fields( 'blt_secure' ); ?>
 
-	<h2><?php esc_html_e( 'Security headers', 'blt-secure' ); ?></h2>
-	<table class="form-table" role="presentation">
-		<tr>
-			<th scope="row"><?php esc_html_e( 'Send security headers', 'blt-secure' ); ?></th>
-			<td>
-				<label><input type="checkbox" name="<?php echo esc_attr( $blt_secure_opt ); ?>[headers][enabled]" value="1" <?php checked( $blt_secure_headers['enabled'] ); ?> />
-				<?php esc_html_e( 'Enable this module (headers already sent by your host or Cloudflare are never duplicated)', 'blt-secure' ); ?></label>
-			</td>
-		</tr>
-		<tr>
-			<th scope="row"><?php esc_html_e( 'HSTS', 'blt-secure' ); ?></th>
-			<td>
-				<label><input type="checkbox" name="<?php echo esc_attr( $blt_secure_opt ); ?>[headers][hsts]" value="1" <?php checked( $blt_secure_headers['hsts'] ); ?> />
-				<?php esc_html_e( 'Strict-Transport-Security (sent only over HTTPS)', 'blt-secure' ); ?></label><br />
-				<label><?php esc_html_e( 'max-age (seconds):', 'blt-secure' ); ?>
-					<input type="number" name="<?php echo esc_attr( $blt_secure_opt ); ?>[headers][hsts_max_age]" value="<?php echo esc_attr( $blt_secure_headers['hsts_max_age'] ); ?>" class="small-text" style="width:110px;" /></label><br />
-				<label><input type="checkbox" name="<?php echo esc_attr( $blt_secure_opt ); ?>[headers][hsts_subdomains]" value="1" <?php checked( $blt_secure_headers['hsts_subdomains'] ); ?> />
-				<?php esc_html_e( 'includeSubDomains', 'blt-secure' ); ?></label><br />
-				<label><input type="checkbox" name="<?php echo esc_attr( $blt_secure_opt ); ?>[headers][hsts_preload]" value="1" <?php checked( $blt_secure_headers['hsts_preload'] ); ?> />
-				<?php esc_html_e( 'preload — effectively irreversible; only enable if you know what this means', 'blt-secure' ); ?></label>
-			</td>
-		</tr>
-		<tr>
-			<th scope="row"><label for="blt-x-frame"><?php esc_html_e( 'X-Frame-Options', 'blt-secure' ); ?></label></th>
-			<td>
-				<select id="blt-x-frame" name="<?php echo esc_attr( $blt_secure_opt ); ?>[headers][x_frame]">
-					<option value="SAMEORIGIN" <?php selected( $blt_secure_headers['x_frame'], 'SAMEORIGIN' ); ?>>SAMEORIGIN</option>
-					<option value="DENY" <?php selected( $blt_secure_headers['x_frame'], 'DENY' ); ?>>DENY</option>
-					<option value="" <?php selected( $blt_secure_headers['x_frame'], '' ); ?>><?php esc_html_e( 'Off', 'blt-secure' ); ?></option>
-				</select>
-			</td>
-		</tr>
-		<tr>
-			<th scope="row"><?php esc_html_e( 'Other headers', 'blt-secure' ); ?></th>
-			<td>
-				<label><input type="checkbox" name="<?php echo esc_attr( $blt_secure_opt ); ?>[headers][nosniff]" value="1" <?php checked( $blt_secure_headers['nosniff'] ); ?> />
-				<code>X-Content-Type-Options: nosniff</code></label><br />
-				<label for="blt-referrer"><?php esc_html_e( 'Referrer-Policy:', 'blt-secure' ); ?></label>
-				<select id="blt-referrer" name="<?php echo esc_attr( $blt_secure_opt ); ?>[headers][referrer_policy]">
-					<?php foreach ( array( 'strict-origin-when-cross-origin', 'strict-origin', 'same-origin', 'no-referrer', 'no-referrer-when-downgrade', '' ) as $blt_secure_rp ) : ?>
-						<option value="<?php echo esc_attr( $blt_secure_rp ); ?>" <?php selected( $blt_secure_headers['referrer_policy'], $blt_secure_rp ); ?>>
-							<?php echo '' === $blt_secure_rp ? esc_html__( 'Off', 'blt-secure' ) : esc_html( $blt_secure_rp ); ?>
-						</option>
-					<?php endforeach; ?>
-				</select>
-			</td>
-		</tr>
-		<tr>
-			<th scope="row"><?php esc_html_e( 'Content-Security-Policy', 'blt-secure' ); ?></th>
-			<td>
-				<label><input type="checkbox" name="<?php echo esc_attr( $blt_secure_opt ); ?>[headers][csp_enabled]" value="1" <?php checked( $blt_secure_headers['csp_enabled'] ); ?> />
-				<?php esc_html_e( 'Send CSP on the front-end (never sent inside wp-admin)', 'blt-secure' ); ?></label><br />
-				<label><input type="checkbox" name="<?php echo esc_attr( $blt_secure_opt ); ?>[headers][csp_report_only]" value="1" <?php checked( $blt_secure_headers['csp_report_only'] ); ?> />
-				<strong><?php esc_html_e( 'Report-Only mode', 'blt-secure' ); ?></strong> —
-				<?php esc_html_e( 'watch your browser console for violations before enforcing', 'blt-secure' ); ?></label>
-				<textarea name="<?php echo esc_attr( $blt_secure_opt ); ?>[headers][csp_policy]" rows="4" class="large-text code"><?php echo esc_textarea( $blt_secure_headers['csp_policy'] ); ?></textarea>
-			</td>
-		</tr>
-	</table>
+	<div class="blt-section">
+		<h2><?php esc_html_e( 'Security headers', 'blt-secure' ); ?></h2>
 
-	<h2><?php esc_html_e( 'Privacy', 'blt-secure' ); ?></h2>
-	<table class="form-table" role="presentation">
-		<tr>
-			<th scope="row"><?php esc_html_e( 'Fingerprinting', 'blt-secure' ); ?></th>
-			<td>
-				<label><input type="checkbox" name="<?php echo esc_attr( $blt_secure_opt ); ?>[privacy][hide_version]" value="1" <?php checked( $blt_secure_privacy['hide_version'] ); ?> />
-				<?php esc_html_e( 'Hide the WordPress version (generator tag and core asset ?ver=)', 'blt-secure' ); ?></label><br />
-				<label><input type="checkbox" name="<?php echo esc_attr( $blt_secure_opt ); ?>[privacy][block_enum]" value="1" <?php checked( $blt_secure_privacy['block_enum'] ); ?> />
-				<?php esc_html_e( 'Block user enumeration (?author=N and the REST users endpoint for visitors)', 'blt-secure' ); ?></label>
-			</td>
-		</tr>
-	</table>
+		<?php
+		blt_secure_setting_open(
+			__( 'Send security headers', 'blt-secure' ),
+			__( 'Emit hardening headers on the front-end and login pages. Headers already sent by your host or Cloudflare are never duplicated.', 'blt-secure' )
+		);
+		blt_secure_setting_control();
+		blt_secure_toggle( $blt_secure_opt . '[headers][enabled]', ! empty( $blt_secure_headers['enabled'] ) );
+		blt_secure_setting_close();
+		?>
 
-	<h2><?php esc_html_e( 'XML-RPC', 'blt-secure' ); ?></h2>
-	<table class="form-table" role="presentation">
-		<tr>
-			<th scope="row"><?php esc_html_e( 'XML-RPC services', 'blt-secure' ); ?></th>
-			<td>
-				<label><input type="checkbox" name="<?php echo esc_attr( $blt_secure_opt ); ?>[xmlrpc][enabled]" value="1" <?php checked( $blt_secure_xmlrpc['enabled'] ); ?> />
-				<?php esc_html_e( 'Allow XML-RPC (needed by Jetpack and the WordPress mobile apps; leave off otherwise)', 'blt-secure' ); ?></label>
-			</td>
-		</tr>
-	</table>
+		<div class="blt-setting">
+			<div class="blt-setting-info">
+				<div class="blt-setting-title"><?php esc_html_e( 'HTTP Strict Transport Security (HSTS)', 'blt-secure' ); ?></div>
+				<p class="blt-setting-desc"><?php esc_html_e( 'Tells browsers to only ever connect over HTTPS. Sent only on secure requests.', 'blt-secure' ); ?></p>
+				<div class="blt-subfields">
+					<label><?php esc_html_e( 'max-age (seconds):', 'blt-secure' ); ?>
+						<input type="number" name="<?php echo esc_attr( $blt_secure_opt ); ?>[headers][hsts_max_age]" value="<?php echo esc_attr( $blt_secure_headers['hsts_max_age'] ); ?>" class="small-text" style="width:120px;" /></label>
+					<label><input type="checkbox" name="<?php echo esc_attr( $blt_secure_opt ); ?>[headers][hsts_subdomains]" value="1" <?php checked( $blt_secure_headers['hsts_subdomains'] ); ?> />
+					<?php esc_html_e( 'includeSubDomains', 'blt-secure' ); ?></label>
+					<label><input type="checkbox" name="<?php echo esc_attr( $blt_secure_opt ); ?>[headers][hsts_preload]" value="1" <?php checked( $blt_secure_headers['hsts_preload'] ); ?> />
+					<?php esc_html_e( 'preload — effectively irreversible; only enable if you know what this means', 'blt-secure' ); ?></label>
+				</div>
+			</div>
+			<div class="blt-setting-control">
+				<?php blt_secure_toggle( $blt_secure_opt . '[headers][hsts]', ! empty( $blt_secure_headers['hsts'] ) ); ?>
+			</div>
+		</div>
 
-	<h2><?php esc_html_e( 'File guard', 'blt-secure' ); ?></h2>
-	<table class="form-table" role="presentation">
-		<tr>
-			<th scope="row"><?php esc_html_e( 'File editing', 'blt-secure' ); ?></th>
-			<td>
-				<?php if ( defined( 'DISALLOW_FILE_EDIT' ) ) : ?>
-					<p>
-						<code>DISALLOW_FILE_EDIT</code>
-						<?php echo DISALLOW_FILE_EDIT ? esc_html__( 'is already enabled in wp-config.php — nothing to do here.', 'blt-secure' ) : esc_html__( 'is explicitly disabled in wp-config.php, which overrides this setting.', 'blt-secure' ); ?>
-					</p>
-				<?php else : ?>
-					<label><input type="checkbox" name="<?php echo esc_attr( $blt_secure_opt ); ?>[fileguard][disallow_file_edit]" value="1" <?php checked( $blt_secure_fileguard['disallow_file_edit'] ); ?> />
-					<?php esc_html_e( 'Disable the theme/plugin file editors in wp-admin', 'blt-secure' ); ?></label>
-				<?php endif; ?>
-			</td>
-		</tr>
-		<tr>
-			<th scope="row"><?php esc_html_e( 'File-manager plugins', 'blt-secure' ); ?></th>
-			<td>
-				<label><input type="checkbox" name="<?php echo esc_attr( $blt_secure_opt ); ?>[fileguard][block_file_managers]" value="1" <?php checked( $blt_secure_fileguard['block_file_managers'] ); ?> />
-				<?php esc_html_e( 'Block installation and activation of file-manager plugins (a common compromise vector)', 'blt-secure' ); ?></label>
-			</td>
-		</tr>
-	</table>
+		<?php
+		blt_secure_setting_open( __( 'X-Frame-Options', 'blt-secure' ), __( 'Controls whether other sites may embed your pages in a frame (clickjacking defense).', 'blt-secure' ) );
+		blt_secure_setting_control();
+		?>
+			<select name="<?php echo esc_attr( $blt_secure_opt ); ?>[headers][x_frame]">
+				<option value="SAMEORIGIN" <?php selected( $blt_secure_headers['x_frame'], 'SAMEORIGIN' ); ?>>SAMEORIGIN</option>
+				<option value="DENY" <?php selected( $blt_secure_headers['x_frame'], 'DENY' ); ?>>DENY</option>
+				<option value="" <?php selected( $blt_secure_headers['x_frame'], '' ); ?>><?php esc_html_e( 'Off', 'blt-secure' ); ?></option>
+			</select>
+		<?php
+		blt_secure_setting_close();
+
+		blt_secure_setting_open( __( 'X-Content-Type-Options', 'blt-secure' ), __( 'Sends "nosniff" so browsers do not guess (and mis-execute) a file’s content type.', 'blt-secure' ) );
+		blt_secure_setting_control();
+		blt_secure_toggle( $blt_secure_opt . '[headers][nosniff]', ! empty( $blt_secure_headers['nosniff'] ) );
+		blt_secure_setting_close();
+
+		blt_secure_setting_open( __( 'Referrer-Policy', 'blt-secure' ), __( 'Controls how much referrer information is shared when visitors follow links off your site.', 'blt-secure' ) );
+		blt_secure_setting_control();
+		?>
+			<select name="<?php echo esc_attr( $blt_secure_opt ); ?>[headers][referrer_policy]">
+				<?php foreach ( array( 'strict-origin-when-cross-origin', 'strict-origin', 'same-origin', 'no-referrer', 'no-referrer-when-downgrade', '' ) as $blt_secure_rp ) : ?>
+					<option value="<?php echo esc_attr( $blt_secure_rp ); ?>" <?php selected( $blt_secure_headers['referrer_policy'], $blt_secure_rp ); ?>>
+						<?php echo '' === $blt_secure_rp ? esc_html__( 'Off', 'blt-secure' ) : esc_html( $blt_secure_rp ); ?>
+					</option>
+				<?php endforeach; ?>
+			</select>
+		<?php
+		blt_secure_setting_close();
+		?>
+
+		<div class="blt-setting">
+			<div class="blt-setting-info">
+				<div class="blt-setting-title"><?php esc_html_e( 'Content-Security-Policy', 'blt-secure' ); ?></div>
+				<p class="blt-setting-desc"><?php esc_html_e( 'The strongest defense against cross-site scripting. Never sent inside wp-admin. Start in Report-Only mode and watch the browser console before enforcing.', 'blt-secure' ); ?></p>
+				<div class="blt-subfields">
+					<label><input type="checkbox" name="<?php echo esc_attr( $blt_secure_opt ); ?>[headers][csp_report_only]" value="1" <?php checked( $blt_secure_headers['csp_report_only'] ); ?> />
+					<strong><?php esc_html_e( 'Report-Only mode', 'blt-secure' ); ?></strong></label>
+					<textarea name="<?php echo esc_attr( $blt_secure_opt ); ?>[headers][csp_policy]" rows="4" class="large-text code"><?php echo esc_textarea( $blt_secure_headers['csp_policy'] ); ?></textarea>
+				</div>
+			</div>
+			<div class="blt-setting-control">
+				<?php blt_secure_toggle( $blt_secure_opt . '[headers][csp_enabled]', ! empty( $blt_secure_headers['csp_enabled'] ) ); ?>
+			</div>
+		</div>
+	</div>
+
+	<div class="blt-section">
+		<h2><?php esc_html_e( 'Privacy', 'blt-secure' ); ?></h2>
+
+		<?php
+		blt_secure_setting_open( __( 'Hide the WordPress version', 'blt-secure' ), __( 'Removes the generator meta tag and the core ?ver= query strings that reveal your exact version.', 'blt-secure' ) );
+		blt_secure_setting_control();
+		blt_secure_toggle( $blt_secure_opt . '[privacy][hide_version]', ! empty( $blt_secure_privacy['hide_version'] ) );
+		blt_secure_setting_close();
+
+		blt_secure_setting_open( __( 'Block user enumeration', 'blt-secure' ), __( 'Stops username harvesting via ?author=N and the REST /wp/v2/users endpoint for visitors.', 'blt-secure' ) );
+		blt_secure_setting_control();
+		blt_secure_toggle( $blt_secure_opt . '[privacy][block_enum]', ! empty( $blt_secure_privacy['block_enum'] ) );
+		blt_secure_setting_close();
+		?>
+	</div>
+
+	<div class="blt-section">
+		<h2><?php esc_html_e( 'XML-RPC', 'blt-secure' ); ?></h2>
+
+		<?php
+		blt_secure_setting_open( __( 'Allow XML-RPC', 'blt-secure' ), __( 'Needed by Jetpack and the WordPress mobile apps. Leave off otherwise — it is abused for brute-force amplification and pingback DoS.', 'blt-secure' ) );
+		blt_secure_setting_control();
+		blt_secure_toggle( $blt_secure_opt . '[xmlrpc][enabled]', ! empty( $blt_secure_xmlrpc['enabled'] ) );
+		blt_secure_setting_close();
+		?>
+	</div>
+
+	<div class="blt-section">
+		<h2><?php esc_html_e( 'File guard', 'blt-secure' ); ?></h2>
+
+		<?php if ( defined( 'DISALLOW_FILE_EDIT' ) ) : ?>
+			<?php
+			blt_secure_setting_open(
+				__( 'Disable the theme/plugin file editor', 'blt-secure' ),
+				DISALLOW_FILE_EDIT
+					? __( 'DISALLOW_FILE_EDIT is already enabled in wp-config.php — nothing to do here.', 'blt-secure' )
+					: __( 'DISALLOW_FILE_EDIT is explicitly disabled in wp-config.php, which overrides this setting.', 'blt-secure' )
+			);
+			blt_secure_setting_control();
+			blt_secure_toggle( $blt_secure_opt . '[fileguard][disallow_file_edit]', DISALLOW_FILE_EDIT, array( 'disabled' => true ) );
+			blt_secure_setting_close();
+			?>
+		<?php else : ?>
+			<?php
+			blt_secure_setting_open( __( 'Disable the theme/plugin file editor', 'blt-secure' ), __( 'Removes the built-in code editors from wp-admin so a compromised login cannot instantly run code.', 'blt-secure' ) );
+			blt_secure_setting_control();
+			blt_secure_toggle( $blt_secure_opt . '[fileguard][disallow_file_edit]', ! empty( $blt_secure_fileguard['disallow_file_edit'] ) );
+			blt_secure_setting_close();
+			?>
+		<?php endif; ?>
+
+		<?php
+		blt_secure_setting_open( __( 'Block file-manager plugins', 'blt-secure' ), __( 'Blocks installation and activation of file-manager plugins, a common compromise vector.', 'blt-secure' ) );
+		blt_secure_setting_control();
+		blt_secure_toggle( $blt_secure_opt . '[fileguard][block_file_managers]', ! empty( $blt_secure_fileguard['block_file_managers'] ) );
+		blt_secure_setting_close();
+		?>
+	</div>
 
 	<?php submit_button(); ?>
 </form>

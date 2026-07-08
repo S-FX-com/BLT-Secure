@@ -49,6 +49,7 @@
 - [ ] **Updates end-to-end:** install a CI-built release zip on staging, add a GitHub token (Advanced tab), force a check (Dashboard → Updates → "Check again"), confirm the update row shows the newer version + changelog, run the update, confirm the plugin folder is still `blt-secure/` and the plugin stays active.
 - [ ] Public-repo updates: with no token configured, no "updates cannot be checked" notice appears; a real newer release is still detected and installs. (No-token warning only returns if `blt_secure_updates_repo_public` is filtered to false.)
 - [ ] Health Check: open the Health Check tab → "Run checks now" → score + grouped pass/warn/fail results render; confirm the daily `blt_secure_health_scan` cron event is scheduled; confirm a fresh page load with no scan does NOT make the self-HTTP request (results come from the stored option).
+- [ ] Settings restyle: on Hardening/Login/Advanced, toggles flip and save correctly (each section saves without wiping another); the read-only `DISALLOW_FILE_EDIT` toggle is disabled but reflects the constant; selects/number fields still persist; keyboard focus ring shows on toggles.
 - [ ] Release workflow dry run: temporarily add a `test/release-dry-run` branch trigger with `draft: true` on the release step, push, download + unzip-verify the draft asset, then remove the test trigger. (workflow_dispatch only appears once the workflow file is on main.)
 
 ## Phase 2 — Detection & Monitoring (in progress)

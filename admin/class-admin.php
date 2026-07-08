@@ -13,6 +13,7 @@ require_once BLT_SECURE_DIR . 'includes/cloudflare/class-cloudflare-api.php';
 require_once BLT_SECURE_DIR . 'includes/cloudflare/class-cloudflare-state.php';
 require_once BLT_SECURE_DIR . 'includes/cloudflare/rule-definitions.php';
 require_once BLT_SECURE_DIR . 'includes/cloudflare/class-cloudflare-deployer.php';
+require_once BLT_SECURE_DIR . 'admin/views/partials.php';
 
 /**
  * One settings page, four tabs. Hardening/Login/Advanced post through the
