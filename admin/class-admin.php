@@ -196,9 +196,10 @@ class Blt_Secure_Admin {
 	}
 
 	/**
-	 * Make the no-update-token state visible where it matters: without a
-	 * token, private-repo API calls 404 and update checks silently find
-	 * nothing, so the site would quietly fall behind.
+	 * Make the no-update-token state visible where it matters: against a
+	 * private repo, without a token API calls 404 and update checks silently
+	 * find nothing, so the site would quietly fall behind. When the repo is
+	 * public (the default), no token is needed and this notice never shows.
 	 *
 	 * @return void
 	 */
@@ -206,6 +207,11 @@ class Blt_Secure_Admin {
 		global $pagenow;
 
 		if ( ! current_user_can( 'manage_options' ) ) {
+			return;
+		}
+
+		// Public repo: updates work without a token, so there is nothing to warn about.
+		if ( Blt_Secure_Updater::repo_public() ) {
 			return;
 		}
 

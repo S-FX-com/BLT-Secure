@@ -40,6 +40,15 @@ class Test_Updater extends TestCase {
 		$this->assertDoesNotMatchRegularExpression( Blt_Secure_Updater::ASSET_REGEX, 'blt-secure-pro.zip' );
 		$this->assertDoesNotMatchRegularExpression( Blt_Secure_Updater::ASSET_REGEX, 'BLT-Secure-abc1234.tar.gz' );
 	}
+
+	public function test_repo_public_by_default() {
+		// The canonical repository is public, so updates need no token.
+		$this->assertTrue( Blt_Secure_Updater::repo_public() );
+	}
+
+	public function test_repo_url_points_at_the_public_org_repo() {
+		$this->assertSame( 'https://github.com/S-FX-com/BLT-Secure/', Blt_Secure_Updater::REPO_URL );
+	}
 }
 
 /**

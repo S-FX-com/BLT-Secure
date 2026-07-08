@@ -56,6 +56,7 @@ $blt_secure_events   = is_array( $blt_secure_events ) ? array_slice( array_rever
 	<tr>
 		<th scope="row"><label for="blt-gh-token"><?php esc_html_e( 'GitHub access token', 'blt-secure' ); ?></label></th>
 		<td>
+			<?php $blt_secure_repo_public = Blt_Secure_Updater::repo_public(); ?>
 			<?php if ( defined( 'BLT_SECURE_GITHUB_TOKEN' ) && BLT_SECURE_GITHUB_TOKEN ) : ?>
 				<p>
 					<span class="blt-badge blt-badge-ok">✓</span>
@@ -64,15 +65,27 @@ $blt_secure_events   = is_array( $blt_secure_events ) ? array_slice( array_rever
 			<?php elseif ( is_string( $store->get( Blt_Secure_Updater::TOKEN_KEY ) ) ) : ?>
 				<p id="blt-gh-status">
 					<span class="blt-badge blt-badge-ok">✓</span>
-					<?php esc_html_e( 'A token is stored encrypted; update checks against the private repository are enabled.', 'blt-secure' ); ?>
+					<?php esc_html_e( 'A token is stored encrypted and used for update checks.', 'blt-secure' ); ?>
 				</p>
 				<button type="button" class="button" id="blt-gh-disconnect"><?php esc_html_e( 'Remove token', 'blt-secure' ); ?></button>
 			<?php else : ?>
+				<?php if ( $blt_secure_repo_public ) : ?>
+					<p id="blt-gh-status-public">
+						<span class="blt-badge blt-badge-ok">✓</span>
+						<?php esc_html_e( 'Updates are enabled automatically — the plugin repository is public, so no token is required.', 'blt-secure' ); ?>
+					</p>
+				<?php endif; ?>
 				<input type="password" id="blt-gh-token" class="regular-text" autocomplete="off" placeholder="<?php esc_attr_e( 'github_pat_…', 'blt-secure' ); ?>" />
-				<button type="button" class="button button-primary" id="blt-gh-connect"><?php esc_html_e( 'Verify & save', 'blt-secure' ); ?></button>
+				<button type="button" class="button" id="blt-gh-connect"><?php esc_html_e( 'Verify & save', 'blt-secure' ); ?></button>
 				<p id="blt-gh-status" class="description"></p>
 				<p class="description">
-					<?php esc_html_e( 'BLT Secure updates itself from a private GitHub repository. Create a fine-grained personal access token with read-only Contents permission on sfxdotcom/BLT-Secure (or a classic token with the repo scope). The token is stored encrypted. Alternatively, define BLT_SECURE_GITHUB_TOKEN in wp-config.php.', 'blt-secure' ); ?>
+					<?php
+					if ( $blt_secure_repo_public ) {
+						esc_html_e( 'A token is optional: add one only to raise the GitHub API rate limit on hosts that share an outbound IP, or if the repository is later made private. Create a fine-grained personal access token with read-only Contents permission on S-FX-com/BLT-Secure (or a classic token with the repo scope). The token is stored encrypted. Alternatively, define BLT_SECURE_GITHUB_TOKEN in wp-config.php.', 'blt-secure' );
+					} else {
+						esc_html_e( 'BLT Secure updates itself from a private GitHub repository, which requires a token. Create a fine-grained personal access token with read-only Contents permission on S-FX-com/BLT-Secure (or a classic token with the repo scope). The token is stored encrypted. Alternatively, define BLT_SECURE_GITHUB_TOKEN in wp-config.php.', 'blt-secure' );
+					}
+					?>
 				</p>
 			<?php endif; ?>
 		</td>

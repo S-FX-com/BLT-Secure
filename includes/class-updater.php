@@ -10,21 +10,24 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Wires the bundled plugin-update-checker (v5) to the private GitHub repo.
+ * Wires the bundled plugin-update-checker (v5) to the GitHub release feed.
  *
  * Updates are served from GitHub release assets (the CI-built zip with a
  * stable blt-secure/ top-level folder) — never from source zipballs, whose
  * folder name includes the commit hash and would break the install path.
  *
+ * The repository is public, so update checks work with no credentials at
+ * all. A GitHub token is therefore optional; when present it is used only to
+ * raise the GitHub API rate limit (60→5000 req/hr) and to keep working if
+ * the repo is ever made private again.
+ *
  * Token precedence: the BLT_SECURE_GITHUB_TOKEN wp-config constant wins
  * (fleet automation), else the encrypted credential store ('github_token',
- * managed on the Advanced tab). Without a token, private-repo API calls
- * 404 and PUC quietly finds no updates — the admin notice in
- * Blt_Secure_Admin makes that state visible instead of silent.
+ * managed on the Advanced tab).
  */
 class Blt_Secure_Updater {
 
-	const REPO_URL    = 'https://github.com/sfxdotcom/BLT-Secure/';
+	const REPO_URL    = 'https://github.com/S-FX-com/BLT-Secure/';
 	const TOKEN_KEY   = 'github_token';
 	const ASSET_REGEX = '/^blt-secure(-[\d.]+)?\.zip$/i';
 
@@ -82,6 +85,23 @@ class Blt_Secure_Updater {
 
 		// Only accept the CI-built zip asset; ignore checksums/source archives.
 		$checker->getVcsApi()->enableReleaseAssets( self::ASSET_REGEX );
+	}
+
+	/**
+	 * Whether the plugin repository is publicly readable. When true, update
+	 * checks succeed with no token and the "missing token" admin notice is
+	 * suppressed. Filterable so a private fork can flip it back to false and
+	 * restore the token-required behavior (and its notice).
+	 *
+	 * @return bool
+	 */
+	public static function repo_public() {
+		/**
+		 * Filter whether the update source repository is public.
+		 *
+		 * @param bool $public Default true (the canonical repo is public).
+		 */
+		return (bool) apply_filters( 'blt_secure_updates_repo_public', true );
 	}
 
 	/**
