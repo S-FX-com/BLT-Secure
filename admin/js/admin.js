@@ -109,6 +109,28 @@
 		} );
 	}
 
+	// Health check: run a scan, then reload to render the fresh results.
+	var hcRunBtn = document.getElementById( 'blt-hc-run' );
+	if ( hcRunBtn ) {
+		hcRunBtn.addEventListener( 'click', function () {
+			var status = document.getElementById( 'blt-hc-status' );
+			hcRunBtn.disabled = true;
+			setMessage( status, cfg.i18n.scanning, false );
+
+			post( 'blt_secure_health_run', {} ).then( function ( json ) {
+				if ( json.success ) {
+					window.location.reload();
+				} else {
+					hcRunBtn.disabled = false;
+					setMessage( status, ( json.data && json.data.message ) || cfg.i18n.scanError, true );
+				}
+			} ).catch( function () {
+				hcRunBtn.disabled = false;
+				setMessage( status, cfg.i18n.scanError, true );
+			} );
+		} );
+	}
+
 	// Deploy / remove cards.
 	document.querySelectorAll( '.blt-card' ).forEach( function ( card ) {
 		var feature = card.getAttribute( 'data-feature' );

@@ -47,13 +47,17 @@
 - [ ] Configure a real free-plan CF zone token → verify, deploy all five cards, confirm rules in CF dash, remove all five, confirm gone.
 - [ ] Deactivate → CF rules untouched, notice shown. Uninstall with cleanup opted in → options/meta gone (including PUC's `external_updates-blt-secure` option and cron hook).
 - [ ] **Updates end-to-end:** install a CI-built release zip on staging, add a GitHub token (Advanced tab), force a check (Dashboard → Updates → "Check again"), confirm the update row shows the newer version + changelog, run the update, confirm the plugin folder is still `blt-secure/` and the plugin stays active.
-- [ ] No-token path: remove the token → warning notice appears on plugins.php/update-core.php, no PHP errors logged.
+- [ ] Public-repo updates: with no token configured, no "updates cannot be checked" notice appears; a real newer release is still detected and installs. (No-token warning only returns if `blt_secure_updates_repo_public` is filtered to false.)
+- [ ] Health Check: open the Health Check tab → "Run checks now" → score + grouped pass/warn/fail results render; confirm the daily `blt_secure_health_scan` cron event is scheduled; confirm a fresh page load with no scan does NOT make the self-HTTP request (results come from the stored option).
+- [ ] Settings restyle: on Hardening/Login/Advanced, toggles flip and save correctly (each section saves without wiping another); the read-only `DISALLOW_FILE_EDIT` toggle is disabled but reflects the constant; selects/number fields still persist; keyboard focus ring shows on toggles.
 - [ ] Release workflow dry run: temporarily add a `test/release-dry-run` branch trigger with `draft: true` on the release step, push, download + unzip-verify the draft asset, then remove the test trigger. (workflow_dispatch only appears once the workflow file is on main.)
 
-## Phase 2 — Detection & Monitoring (not started)
+## Phase 2 — Detection & Monitoring (in progress)
 
-- [ ] File integrity monitor (baseline hash core/theme/plugin, scheduled diff, alert on change)
-- [ ] YARA-based scanner via Pressidium ruleset + signature-base (pure-PHP subset fallback for shared hosting)
+- [x] **Health Check** — on-demand + daily WP-Cron security self-assessment (~50 checks) with a pass/warn/fail score.
+  - AC: checks framework (`includes/health/`) is read-only and side-effect free; scan runs only on cron/AJAX, never on a front-end page load; results stored in the non-autoloaded `blt_secure_health_results` option; score = passed / (passed + failed), warnings/skips excluded; a check that throws is downgraded to SKIP; "Health Check" tab shows score gauge, tallies, and grouped results; catalogue is extendable via the `blt_secure_health_checks` filter (the core/malware scanners below append their own checks here).
+- [ ] File integrity monitor (baseline hash core/theme/plugin, scheduled diff, alert on change) — *the "core scanner"; will register health checks via `blt_secure_health_checks`*
+- [ ] YARA-based scanner via Pressidium ruleset + signature-base (pure-PHP subset fallback for shared hosting) — *the "malware scanner"*
 - [ ] IOC blocklist sync (ThreatFox, Spamhaus DROP) → push to CF IP List / custom rule
 - [ ] CF firewall event ingestion → unified timeline
 - [ ] Suspicious wp-admin activity log (new admins, plugin installs, cron changes)

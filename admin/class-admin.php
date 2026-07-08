@@ -13,6 +13,7 @@ require_once BLT_SECURE_DIR . 'includes/cloudflare/class-cloudflare-api.php';
 require_once BLT_SECURE_DIR . 'includes/cloudflare/class-cloudflare-state.php';
 require_once BLT_SECURE_DIR . 'includes/cloudflare/rule-definitions.php';
 require_once BLT_SECURE_DIR . 'includes/cloudflare/class-cloudflare-deployer.php';
+require_once BLT_SECURE_DIR . 'admin/views/partials.php';
 
 /**
  * One settings page, four tabs. Hardening/Login/Advanced post through the
@@ -168,10 +169,12 @@ class Blt_Secure_Admin {
 				'ajaxUrl' => admin_url( 'admin-ajax.php' ),
 				'nonce'   => wp_create_nonce( 'blt_secure_cf' ),
 				'i18n'    => array(
-					'working'  => __( 'Working…', 'blt-secure' ),
-					'deployed' => __( 'Deployed', 'blt-secure' ),
-					'removed'  => __( 'Not deployed', 'blt-secure' ),
-					'error'    => __( 'Error', 'blt-secure' ),
+					'working'   => __( 'Working…', 'blt-secure' ),
+					'deployed'  => __( 'Deployed', 'blt-secure' ),
+					'removed'   => __( 'Not deployed', 'blt-secure' ),
+					'error'     => __( 'Error', 'blt-secure' ),
+					'scanning'  => __( 'Running checks…', 'blt-secure' ),
+					'scanError' => __( 'The scan could not be completed.', 'blt-secure' ),
 				),
 			)
 		);
@@ -196,9 +199,10 @@ class Blt_Secure_Admin {
 	}
 
 	/**
-	 * Make the no-update-token state visible where it matters: without a
-	 * token, private-repo API calls 404 and update checks silently find
-	 * nothing, so the site would quietly fall behind.
+	 * Make the no-update-token state visible where it matters: against a
+	 * private repo, without a token API calls 404 and update checks silently
+	 * find nothing, so the site would quietly fall behind. When the repo is
+	 * public (the default), no token is needed and this notice never shows.
 	 *
 	 * @return void
 	 */
@@ -206,6 +210,11 @@ class Blt_Secure_Admin {
 		global $pagenow;
 
 		if ( ! current_user_can( 'manage_options' ) ) {
+			return;
+		}
+
+		// Public repo: updates work without a token, so there is nothing to warn about.
+		if ( Blt_Secure_Updater::repo_public() ) {
 			return;
 		}
 
@@ -244,6 +253,7 @@ class Blt_Secure_Admin {
 		$tabs = array(
 			'hardening'  => __( 'Hardening', 'blt-secure' ),
 			'login'      => __( 'Login', 'blt-secure' ),
+			'health'     => __( 'Health Check', 'blt-secure' ),
 			'cloudflare' => __( 'Cloudflare', 'blt-secure' ),
 			'advanced'   => __( 'Advanced', 'blt-secure' ),
 		);
@@ -255,6 +265,7 @@ class Blt_Secure_Admin {
 		$cf_state = $this->cf_state;
 		$store    = $this->plugin->credentials;
 		$admin    = $this;
+		$health   = isset( $this->plugin->modules['health'] ) ? $this->plugin->modules['health'] : null;
 
 		require BLT_SECURE_DIR . 'admin/views/settings-page.php';
 	}
