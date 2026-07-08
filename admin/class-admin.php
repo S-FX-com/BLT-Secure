@@ -168,10 +168,12 @@ class Blt_Secure_Admin {
 				'ajaxUrl' => admin_url( 'admin-ajax.php' ),
 				'nonce'   => wp_create_nonce( 'blt_secure_cf' ),
 				'i18n'    => array(
-					'working'  => __( 'Working…', 'blt-secure' ),
-					'deployed' => __( 'Deployed', 'blt-secure' ),
-					'removed'  => __( 'Not deployed', 'blt-secure' ),
-					'error'    => __( 'Error', 'blt-secure' ),
+					'working'   => __( 'Working…', 'blt-secure' ),
+					'deployed'  => __( 'Deployed', 'blt-secure' ),
+					'removed'   => __( 'Not deployed', 'blt-secure' ),
+					'error'     => __( 'Error', 'blt-secure' ),
+					'scanning'  => __( 'Running checks…', 'blt-secure' ),
+					'scanError' => __( 'The scan could not be completed.', 'blt-secure' ),
 				),
 			)
 		);
@@ -250,6 +252,7 @@ class Blt_Secure_Admin {
 		$tabs = array(
 			'hardening'  => __( 'Hardening', 'blt-secure' ),
 			'login'      => __( 'Login', 'blt-secure' ),
+			'health'     => __( 'Health Check', 'blt-secure' ),
 			'cloudflare' => __( 'Cloudflare', 'blt-secure' ),
 			'advanced'   => __( 'Advanced', 'blt-secure' ),
 		);
@@ -261,6 +264,7 @@ class Blt_Secure_Admin {
 		$cf_state = $this->cf_state;
 		$store    = $this->plugin->credentials;
 		$admin    = $this;
+		$health   = isset( $this->plugin->modules['health'] ) ? $this->plugin->modules['health'] : null;
 
 		require BLT_SECURE_DIR . 'admin/views/settings-page.php';
 	}

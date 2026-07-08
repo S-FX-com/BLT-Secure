@@ -64,3 +64,182 @@
 .blt-waf-controls label {
 	margin-right: 16px;
 }
+
+/* -------------------------------------------------------------------------
+ * Health Check
+ * ---------------------------------------------------------------------- */
+
+.blt-hc-scoreboard {
+	display: flex;
+	align-items: center;
+	gap: 28px;
+	background: #fff;
+	border: 1px solid #c3c4c7;
+	border-radius: 6px;
+	padding: 20px 24px;
+	max-width: 720px;
+	margin: 12px 0 4px;
+}
+
+.blt-hc-scoreboard.blt-hc-empty {
+	color: #646970;
+}
+
+.blt-hc-score {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	width: 120px;
+	height: 120px;
+	border-radius: 50%;
+	border: 6px solid #dcdcde;
+	flex: 0 0 auto;
+}
+
+.blt-hc-score-num {
+	font-size: 30px;
+	font-weight: 700;
+	line-height: 1;
+}
+
+.blt-hc-score-label {
+	font-size: 11px;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	color: #646970;
+	margin-top: 6px;
+}
+
+.blt-hc-score-good {
+	border-color: #00a32a;
+}
+
+.blt-hc-score-ok {
+	border-color: #dba617;
+}
+
+.blt-hc-score-bad {
+	border-color: #d63638;
+}
+
+.blt-hc-tallies {
+	display: flex;
+	gap: 26px;
+	margin: 0;
+}
+
+.blt-hc-tallies li {
+	margin: 0;
+	font-size: 13px;
+	color: #646970;
+}
+
+.blt-hc-tallies strong {
+	display: block;
+	font-size: 26px;
+	line-height: 1.1;
+	color: #1d2327;
+}
+
+.blt-hc-tallies li.blt-hc-pass strong {
+	color: #00a32a;
+}
+
+.blt-hc-tallies li.blt-hc-warn strong {
+	color: #dba617;
+}
+
+.blt-hc-tallies li.blt-hc-fail strong {
+	color: #d63638;
+}
+
+.blt-hc-meta {
+	color: #646970;
+	font-style: italic;
+	margin: 4px 0 0;
+}
+
+.blt-hc-cat {
+	margin: 26px 0 8px;
+	font-size: 14px;
+	border-bottom: 1px solid #dcdcde;
+	padding-bottom: 6px;
+}
+
+.blt-hc-list {
+	margin: 0;
+	max-width: 900px;
+}
+
+.blt-hc-item {
+	display: flex;
+	gap: 12px;
+	align-items: flex-start;
+	background: #fff;
+	border: 1px solid #e0e0e0;
+	border-left-width: 4px;
+	border-radius: 4px;
+	padding: 12px 14px;
+	margin-bottom: 6px;
+}
+
+.blt-hc-item.blt-hc-pass {
+	border-left-color: #00a32a;
+}
+
+.blt-hc-item.blt-hc-warn {
+	border-left-color: #dba617;
+}
+
+.blt-hc-item.blt-hc-fail {
+	border-left-color: #d63638;
+}
+
+.blt-hc-item.blt-hc-skip {
+	border-left-color: #c3c4c7;
+}
+
+.blt-hc-icon {
+	flex: 0 0 auto;
+	width: 22px;
+	height: 22px;
+	border-radius: 50%;
+	text-align: center;
+	line-height: 22px;
+	font-weight: 700;
+	font-size: 13px;
+	color: #fff;
+	background: #c3c4c7;
+}
+
+.blt-hc-pass .blt-hc-icon {
+	background: #00a32a;
+}
+
+.blt-hc-warn .blt-hc-icon {
+	background: #dba617;
+}
+
+.blt-hc-fail .blt-hc-icon {
+	background: #d63638;
+}
+
+.blt-hc-body {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+
+.blt-hc-title {
+	font-weight: 600;
+}
+
+.blt-hc-msg {
+	color: #3c434a;
+}
+
+.blt-hc-details {
+	color: #646970;
+	font-size: 12px;
+}
