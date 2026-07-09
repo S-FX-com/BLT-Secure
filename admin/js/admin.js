@@ -175,6 +175,28 @@
 		} );
 	}
 
+	// IOC feed sync (Advanced tab).
+	var iocRunBtn = document.getElementById( 'blt-ioc-run' );
+	if ( iocRunBtn ) {
+		iocRunBtn.addEventListener( 'click', function () {
+			var status = document.getElementById( 'blt-ioc-status' );
+			iocRunBtn.disabled = true;
+			setMessage( status, cfg.i18n.iocSync, false );
+
+			post( 'blt_secure_ioc_sync_run', {} ).then( function ( json ) {
+				if ( json.success ) {
+					window.location.reload();
+				} else {
+					iocRunBtn.disabled = false;
+					setMessage( status, ( json.data && json.data.message ) || cfg.i18n.scanError, true );
+				}
+			} ).catch( function () {
+				iocRunBtn.disabled = false;
+				setMessage( status, cfg.i18n.scanError, true );
+			} );
+		} );
+	}
+
 	// Deploy / remove cards.
 	document.querySelectorAll( '.blt-card' ).forEach( function ( card ) {
 		var feature = card.getAttribute( 'data-feature' );

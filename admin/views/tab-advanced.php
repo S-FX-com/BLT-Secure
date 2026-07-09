@@ -99,6 +99,57 @@ $blt_secure_events   = is_array( $blt_secure_events ) ? array_slice( array_rever
 	</div>
 </div>
 
+<div class="blt-section">
+	<h2><?php esc_html_e( 'Threat-intel blocklist (Cloudflare)', 'blt-secure' ); ?></h2>
+	<div class="blt-setting">
+		<div class="blt-setting-info">
+			<div class="blt-setting-title"><?php esc_html_e( 'IOC feed sync', 'blt-secure' ); ?></div>
+			<?php
+			$blt_secure_ioc_state  = $ioc ? $ioc->latest() : null;
+			$blt_secure_ioc_status = is_array( $blt_secure_ioc_state ) && isset( $blt_secure_ioc_state['status'] ) ? $blt_secure_ioc_state['status'] : '';
+			$blt_secure_ioc_msg    = '';
+			switch ( $blt_secure_ioc_status ) {
+				case 'ok':
+					$blt_secure_ioc_msg = sprintf(
+						/* translators: 1: number of indicators, 2: human time diff */
+						__( '%1$d indicators synced to the Cloudflare IP List %2$s ago.', 'blt-secure' ),
+						isset( $blt_secure_ioc_state['count'] ) ? (int) $blt_secure_ioc_state['count'] : 0,
+						human_time_diff( (int) $blt_secure_ioc_state['time'], time() )
+					);
+					break;
+				case 'no_token':
+					$blt_secure_ioc_msg = __( 'Connect a Cloudflare token on the Cloudflare tab to enable edge blocking.', 'blt-secure' );
+					break;
+				case 'no_feeds':
+					$blt_secure_ioc_msg = __( 'No threat-intel feeds are enabled. Enable an ip-list or ioc-json feed in feeds/feeds.json.', 'blt-secure' );
+					break;
+				case 'empty':
+					$blt_secure_ioc_msg = __( 'The enabled feeds returned no usable indicators.', 'blt-secure' );
+					break;
+				case 'error':
+					$blt_secure_ioc_msg = isset( $blt_secure_ioc_state['error'] ) ? $blt_secure_ioc_state['error'] : __( 'The last sync failed.', 'blt-secure' );
+					break;
+				default:
+					$blt_secure_ioc_msg = __( 'No sync has run yet. Enable feeds and connect Cloudflare, then sync.', 'blt-secure' );
+			}
+			?>
+			<p class="blt-setting-desc">
+				<?php if ( 'ok' === $blt_secure_ioc_status ) : ?>
+					<span class="blt-badge blt-badge-ok">✓</span>
+				<?php endif; ?>
+				<?php echo esc_html( $blt_secure_ioc_msg ); ?>
+			</p>
+			<p class="blt-setting-desc">
+				<?php esc_html_e( 'Pulls the enabled abuse.ch / Spamhaus-style feeds and blocks their IPs at the Cloudflare edge. Requires the token to also carry Account → Account Filter Lists: Edit.', 'blt-secure' ); ?>
+			</p>
+			<p>
+				<button type="button" class="button" id="blt-ioc-run"><?php esc_html_e( 'Sync now', 'blt-secure' ); ?></button>
+				<span id="blt-ioc-status" class="blt-card-message"></span>
+			</p>
+		</div>
+	</div>
+</div>
+
 <h2><?php esc_html_e( 'Recent security events', 'blt-secure' ); ?></h2>
 <?php if ( empty( $blt_secure_events ) ) : ?>
 	<p class="description"><?php esc_html_e( 'No events recorded yet.', 'blt-secure' ); ?></p>

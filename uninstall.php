@@ -57,6 +57,7 @@ if ( ! empty( $blt_secure_advanced['delete_data_on_uninstall'] ) ) {
 	delete_option( 'blt_secure_health_results' );
 	delete_option( 'blt_secure_core_scan_results' );
 	delete_option( 'blt_secure_malware_results' );
+	delete_option( 'blt_secure_ioc_state' );
 
 	// plugin-update-checker state.
 	delete_option( 'external_updates-blt-secure' );
@@ -80,4 +81,5 @@ if ( ! empty( $blt_secure_advanced['delete_data_on_uninstall'] ) ) {
 	wp_clear_scheduled_hook( 'blt_secure_health_scan' );
 	wp_clear_scheduled_hook( 'blt_secure_core_scan' );
 	wp_clear_scheduled_hook( 'blt_secure_malware_scan' );
+	wp_clear_scheduled_hook( 'blt_secure_ioc_sync' );
 }

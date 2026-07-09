@@ -32,6 +32,7 @@ require_once BLT_SECURE_DIR . 'includes/crypto/class-crypto.php';
 require_once BLT_SECURE_DIR . 'includes/crypto/interface-credential-store.php';
 require_once BLT_SECURE_DIR . 'includes/crypto/class-encrypted-option-store.php';
 require_once BLT_SECURE_DIR . 'includes/feeds/class-feeds.php';
+require_once BLT_SECURE_DIR . 'includes/feeds/class-ioc-parser.php';
 require_once BLT_SECURE_DIR . 'includes/modules/class-alerting.php';
 require_once BLT_SECURE_DIR . 'includes/modules/class-activity.php';
 require_once BLT_SECURE_DIR . 'includes/modules/class-upload-guard.php';
@@ -51,6 +52,7 @@ require_once BLT_SECURE_DIR . 'includes/scanner/class-core-scanner.php';
 require_once BLT_SECURE_DIR . 'includes/modules/class-scanner.php';
 require_once BLT_SECURE_DIR . 'includes/scanner/class-malware-scanner.php';
 require_once BLT_SECURE_DIR . 'includes/modules/class-malware.php';
+require_once BLT_SECURE_DIR . 'includes/modules/class-ioc.php';
 require_once BLT_SECURE_DIR . 'includes/class-updater.php';
 require_once BLT_SECURE_DIR . 'includes/class-blt-secure.php';
 
