@@ -380,6 +380,7 @@ $blt_test_requires = array(
 	'includes/health/class-health-context.php',
 	'includes/health/class-health-runner.php',
 	'includes/health/class-health-checks.php',
+	'includes/scanner/class-core-scanner.php',
 	'includes/cloudflare/rule-definitions.php',
 	'includes/cloudflare/class-cloudflare-api.php',
 	'includes/cloudflare/class-cloudflare-state.php',

@@ -175,6 +175,7 @@ class Blt_Secure_Admin {
 					'error'     => __( 'Error', 'blt-secure' ),
 					'scanning'  => __( 'Running checks…', 'blt-secure' ),
 					'scanError' => __( 'The scan could not be completed.', 'blt-secure' ),
+					'coreScan'  => __( 'Scanning core files…', 'blt-secure' ),
 				),
 			)
 		);
@@ -254,6 +255,7 @@ class Blt_Secure_Admin {
 			'hardening'  => __( 'Hardening', 'blt-secure' ),
 			'login'      => __( 'Login', 'blt-secure' ),
 			'health'     => __( 'Health Check', 'blt-secure' ),
+			'scanner'    => __( 'Scanner', 'blt-secure' ),
 			'cloudflare' => __( 'Cloudflare', 'blt-secure' ),
 			'advanced'   => __( 'Advanced', 'blt-secure' ),
 		);
@@ -266,6 +268,7 @@ class Blt_Secure_Admin {
 		$store    = $this->plugin->credentials;
 		$admin    = $this;
 		$health   = isset( $this->plugin->modules['health'] ) ? $this->plugin->modules['health'] : null;
+		$scanner  = isset( $this->plugin->modules['scanner'] ) ? $this->plugin->modules['scanner'] : null;
 
 		require BLT_SECURE_DIR . 'admin/views/settings-page.php';
 	}

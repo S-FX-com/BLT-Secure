@@ -55,6 +55,7 @@ if ( ! empty( $blt_secure_advanced['delete_data_on_uninstall'] ) ) {
 	delete_option( 'blt_secure_cred_cf_token' );
 	delete_option( 'blt_secure_cred_github_token' );
 	delete_option( 'blt_secure_health_results' );
+	delete_option( 'blt_secure_core_scan_results' );
 
 	// plugin-update-checker state.
 	delete_option( 'external_updates-blt-secure' );
@@ -76,4 +77,5 @@ if ( ! empty( $blt_secure_advanced['delete_data_on_uninstall'] ) ) {
 
 	wp_clear_scheduled_hook( 'blt_secure_refresh_cf_ips' );
 	wp_clear_scheduled_hook( 'blt_secure_health_scan' );
+	wp_clear_scheduled_hook( 'blt_secure_core_scan' );
 }

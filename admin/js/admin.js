@@ -131,6 +131,28 @@
 		} );
 	}
 
+	// Core scanner: run a scan, then reload to render the flagged files.
+	var scanRunBtn = document.getElementById( 'blt-scan-run' );
+	if ( scanRunBtn ) {
+		scanRunBtn.addEventListener( 'click', function () {
+			var status = document.getElementById( 'blt-scan-status' );
+			scanRunBtn.disabled = true;
+			setMessage( status, cfg.i18n.coreScan, false );
+
+			post( 'blt_secure_core_scan_run', {} ).then( function ( json ) {
+				if ( json.success ) {
+					window.location.reload();
+				} else {
+					scanRunBtn.disabled = false;
+					setMessage( status, ( json.data && json.data.message ) || cfg.i18n.scanError, true );
+				}
+			} ).catch( function () {
+				scanRunBtn.disabled = false;
+				setMessage( status, cfg.i18n.scanError, true );
+			} );
+		} );
+	}
+
 	// Deploy / remove cards.
 	document.querySelectorAll( '.blt-card' ).forEach( function ( card ) {
 		var feature = card.getAttribute( 'data-feature' );
