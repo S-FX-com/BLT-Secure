@@ -218,6 +218,9 @@ class Blt_Secure_Ioc implements Blt_Secure_Module {
 			$this->alerting->notify( 'ioc_sync', array( 'count' => count( $ips ) ) );
 		}
 
+		// Record what this refresh changed relative to the last one.
+		( new Blt_Secure_Feed_Changelog() )->record( $ips, $per_feed, $this->alerting );
+
 		return $this->store(
 			array(
 				'status'   => 'ok',

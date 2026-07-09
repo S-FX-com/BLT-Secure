@@ -1,0 +1,15 @@
+{
+	"name": "blt-secure-fleet",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"description": "BLT Secure fleet dashboard — Cloudflare Worker + D1.",
+	"scripts": {
+		"test": "node --test test/*.test.js",
+		"dev": "wrangler dev",
+		"deploy": "wrangler deploy"
+	},
+	"devDependencies": {
+		"wrangler": "^3.60.0"
+	}
+}

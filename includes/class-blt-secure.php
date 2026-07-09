@@ -91,6 +91,7 @@ final class Blt_Secure {
 
 		$modules = array(
 			$alerting,
+			new Blt_Secure_Alert_Channels( $this->options, $this->credentials ),
 			new Blt_Secure_Activity( $this->options, $alerting ),
 			new Blt_Secure_Upload_Guard( $this->options, $alerting ),
 			new Blt_Secure_Headers( $this->options ),
@@ -105,6 +106,7 @@ final class Blt_Secure {
 			new Blt_Secure_Baseline( $this->options, $alerting ),
 			new Blt_Secure_Ioc( $this->options, $this->credentials, $alerting ),
 			new Blt_Secure_Timeline( $this->options, $this->credentials, $alerting ),
+			new Blt_Secure_Fleet( $this->options, $this->credentials ),
 		);
 
 		/**
@@ -211,6 +213,7 @@ final class Blt_Secure {
 		wp_clear_scheduled_hook( Blt_Secure_Baseline::CRON_HOOK );
 		wp_clear_scheduled_hook( Blt_Secure_Ioc::CRON_HOOK );
 		wp_clear_scheduled_hook( Blt_Secure_Timeline::CRON_HOOK );
+		wp_clear_scheduled_hook( Blt_Secure_Fleet::CRON_HOOK );
 		flush_rewrite_rules();
 	}
 }

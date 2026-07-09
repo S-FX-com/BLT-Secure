@@ -53,8 +53,106 @@ $blt_secure_events   = is_array( $blt_secure_events ) ? array_slice( array_rever
 		?>
 	</div>
 
+	<?php $blt_secure_alerts = $options->section( 'alerts' ); ?>
+	<div class="blt-section">
+		<h2><?php esc_html_e( 'Alert notifications', 'blt-secure' ); ?></h2>
+		<p class="blt-section-desc"><?php esc_html_e( 'Get notified when a high-signal security event occurs (lockouts, blocked uploads, malware or integrity findings, a new administrator). Notifications of the same type are throttled to avoid floods.', 'blt-secure' ); ?></p>
+		<?php
+		blt_secure_setting_open( __( 'Email notifications', 'blt-secure' ), __( 'Send alerts by email.', 'blt-secure' ) );
+		blt_secure_setting_control();
+		blt_secure_toggle( $blt_secure_opt . '[alerts][email_enabled]', ! empty( $blt_secure_alerts['email_enabled'] ) );
+		blt_secure_setting_close();
+		?>
+		<div class="blt-setting">
+			<div class="blt-setting-info">
+				<div class="blt-setting-title"><?php esc_html_e( 'Notification email', 'blt-secure' ); ?></div>
+				<p class="blt-setting-desc"><?php esc_html_e( 'Where to send email alerts. Leave blank to use the site admin email.', 'blt-secure' ); ?></p>
+			</div>
+			<div class="blt-setting-control">
+				<input type="email" name="<?php echo esc_attr( $blt_secure_opt ); ?>[alerts][email_to]" value="<?php echo esc_attr( isset( $blt_secure_alerts['email_to'] ) ? $blt_secure_alerts['email_to'] : '' ); ?>" class="regular-text" placeholder="<?php echo esc_attr( (string) get_option( 'admin_email' ) ); ?>" />
+			</div>
+		</div>
+		<?php
+		blt_secure_setting_open( __( 'Slack notifications', 'blt-secure' ), __( 'Post alerts to a Slack channel via an incoming webhook (configured below).', 'blt-secure' ) );
+		blt_secure_setting_control();
+		blt_secure_toggle( $blt_secure_opt . '[alerts][slack_enabled]', ! empty( $blt_secure_alerts['slack_enabled'] ) );
+		blt_secure_setting_close();
+		?>
+	</div>
+
+	<?php $blt_secure_fleet = $options->section( 'fleet' ); ?>
+	<div class="blt-section">
+		<h2><?php esc_html_e( 'Fleet reporting', 'blt-secure' ); ?></h2>
+		<p class="blt-section-desc"><?php esc_html_e( 'Push a compact security-posture snapshot (scores, counts, statuses, versions — never secrets or file contents) to your BLT Secure fleet dashboard. Off by default.', 'blt-secure' ); ?></p>
+		<?php
+		blt_secure_setting_open( __( 'Enable fleet reporting', 'blt-secure' ), __( 'Send a daily snapshot and an immediate push when a high-signal event occurs.', 'blt-secure' ) );
+		blt_secure_setting_control();
+		blt_secure_toggle( $blt_secure_opt . '[fleet][enabled]', ! empty( $blt_secure_fleet['enabled'] ) );
+		blt_secure_setting_close();
+		?>
+		<div class="blt-setting">
+			<div class="blt-setting-info">
+				<div class="blt-setting-title"><?php esc_html_e( 'Dashboard endpoint', 'blt-secure' ); ?></div>
+				<p class="blt-setting-desc"><?php esc_html_e( 'The base URL of your fleet dashboard Worker (e.g. https://fleet.example.com).', 'blt-secure' ); ?></p>
+			</div>
+			<div class="blt-setting-control">
+				<input type="url" name="<?php echo esc_attr( $blt_secure_opt ); ?>[fleet][endpoint]" value="<?php echo esc_attr( isset( $blt_secure_fleet['endpoint'] ) ? $blt_secure_fleet['endpoint'] : '' ); ?>" class="regular-text" placeholder="https://fleet.example.com" />
+			</div>
+		</div>
+	</div>
+
 	<?php submit_button(); ?>
 </form>
+
+<div class="blt-section">
+	<h2><?php esc_html_e( 'Fleet enrollment', 'blt-secure' ); ?></h2>
+	<div class="blt-setting">
+		<div class="blt-setting-info">
+			<div class="blt-setting-title"><?php esc_html_e( 'Enrollment token', 'blt-secure' ); ?></div>
+			<?php if ( is_string( $store->get( Blt_Secure_Fleet::TOKEN_KEY ) ) ) : ?>
+				<p id="blt-fleet-status" class="blt-setting-desc">
+					<span class="blt-badge blt-badge-ok">✓</span>
+					<?php esc_html_e( 'An enrollment token is stored encrypted.', 'blt-secure' ); ?>
+				</p>
+				<p>
+					<button type="button" class="button button-primary" id="blt-fleet-report"><?php esc_html_e( 'Send report now', 'blt-secure' ); ?></button>
+					<button type="button" class="button" id="blt-fleet-disconnect"><?php esc_html_e( 'Remove token', 'blt-secure' ); ?></button>
+					<span id="blt-fleet-msg" class="blt-card-message"></span>
+				</p>
+			<?php else : ?>
+				<p>
+					<input type="password" id="blt-fleet-token" class="regular-text" autocomplete="off" placeholder="<?php esc_attr_e( 'paste enrollment token', 'blt-secure' ); ?>" />
+					<button type="button" class="button" id="blt-fleet-connect"><?php esc_html_e( 'Save token', 'blt-secure' ); ?></button>
+				</p>
+				<p id="blt-fleet-status" class="blt-setting-desc"></p>
+				<p class="blt-setting-desc"><?php esc_html_e( 'Generate an enrollment token for this site in your fleet dashboard and paste it here. It is stored encrypted and used to authenticate reports.', 'blt-secure' ); ?></p>
+			<?php endif; ?>
+		</div>
+	</div>
+</div>
+
+<div class="blt-section">
+	<h2><?php esc_html_e( 'Slack webhook', 'blt-secure' ); ?></h2>
+	<div class="blt-setting">
+		<div class="blt-setting-info">
+			<div class="blt-setting-title"><?php esc_html_e( 'Incoming webhook URL', 'blt-secure' ); ?></div>
+			<?php if ( is_string( $store->get( 'slack_webhook' ) ) ) : ?>
+				<p id="blt-slack-status" class="blt-setting-desc">
+					<span class="blt-badge blt-badge-ok">✓</span>
+					<?php esc_html_e( 'A Slack webhook is stored encrypted. Enable "Slack notifications" above to use it.', 'blt-secure' ); ?>
+				</p>
+				<p><button type="button" class="button" id="blt-slack-disconnect"><?php esc_html_e( 'Remove webhook', 'blt-secure' ); ?></button></p>
+			<?php else : ?>
+				<p>
+					<input type="url" id="blt-slack-webhook" class="regular-text" autocomplete="off" placeholder="https://hooks.slack.com/services/…" />
+					<button type="button" class="button" id="blt-slack-connect"><?php esc_html_e( 'Verify & save', 'blt-secure' ); ?></button>
+				</p>
+				<p id="blt-slack-status" class="blt-setting-desc"></p>
+				<p class="blt-setting-desc"><?php esc_html_e( 'Create an incoming webhook in your Slack workspace (Apps → Incoming Webhooks) and paste the URL here. A test message is sent when you save; the URL is stored encrypted.', 'blt-secure' ); ?></p>
+			<?php endif; ?>
+		</div>
+	</div>
+</div>
 
 <div class="blt-section">
 	<h2><?php esc_html_e( 'Plugin updates', 'blt-secure' ); ?></h2>
@@ -146,6 +244,32 @@ $blt_secure_events   = is_array( $blt_secure_events ) ? array_slice( array_rever
 				<button type="button" class="button" id="blt-ioc-run"><?php esc_html_e( 'Sync now', 'blt-secure' ); ?></button>
 				<span id="blt-ioc-status" class="blt-card-message"></span>
 			</p>
+			<?php
+			$blt_secure_changelog = ( new Blt_Secure_Feed_Changelog() )->entries( 10 );
+			if ( ! empty( $blt_secure_changelog ) ) :
+				?>
+				<p class="blt-setting-title" style="margin-top:16px;"><?php esc_html_e( 'Recent feed changes', 'blt-secure' ); ?></p>
+				<ul class="blt-hc-list">
+					<?php foreach ( $blt_secure_changelog as $blt_secure_cl ) : ?>
+						<li class="blt-hc-item blt-hc-skip">
+							<span class="blt-hc-body">
+								<span class="blt-hc-title"><?php echo esc_html( wp_date( 'Y-m-d H:i', (int) $blt_secure_cl['time'] ) ); ?></span>
+								<span class="blt-hc-msg">
+									<?php
+									printf(
+										/* translators: 1: total, 2: added, 3: removed */
+										esc_html__( '%1$d indicators (+%2$d / −%3$d since last refresh)', 'blt-secure' ),
+										(int) $blt_secure_cl['total'],
+										(int) $blt_secure_cl['added'],
+										(int) $blt_secure_cl['removed']
+									);
+									?>
+								</span>
+							</span>
+						</li>
+					<?php endforeach; ?>
+				</ul>
+			<?php endif; ?>
 		</div>
 	</div>
 </div>

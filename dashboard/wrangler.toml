@@ -1,0 +1,18 @@
+# BLT Secure fleet dashboard — Cloudflare Worker config.
+# See DEPLOY.md for the full runbook.
+
+name = "blt-secure-fleet"
+main = "src/index.js"
+compatibility_date = "2024-11-01"
+
+# Operator routes (/ and /admin/*) must sit behind Cloudflare Access.
+# With this on, the Worker also rejects operator requests that arrive without
+# the Access identity header as defense-in-depth.
+[vars]
+ACCESS_ENFORCED = "1"
+
+# Fill database_id in after `wrangler d1 create blt-secure-fleet`.
+[[d1_databases]]
+binding = "DB"
+database_name = "blt-secure-fleet"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"

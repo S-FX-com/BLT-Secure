@@ -109,6 +109,92 @@
 		} );
 	}
 
+	// Slack webhook (Advanced tab) — same flow as the GitHub token.
+	var slackConnectBtn = document.getElementById( 'blt-slack-connect' );
+	if ( slackConnectBtn ) {
+		slackConnectBtn.addEventListener( 'click', function () {
+			var input = document.getElementById( 'blt-slack-webhook' );
+			var status = document.getElementById( 'blt-slack-status' );
+
+			slackConnectBtn.disabled = true;
+			setMessage( status, cfg.i18n.working, false );
+
+			post( 'blt_secure_slack_save', { webhook: input.value } ).then( function ( json ) {
+				if ( json.success ) {
+					setMessage( status, json.data.message, false );
+					window.location.reload();
+				} else {
+					slackConnectBtn.disabled = false;
+					setMessage( status, json.data.message, true );
+				}
+			} ).catch( function () {
+				slackConnectBtn.disabled = false;
+				setMessage( status, cfg.i18n.error, true );
+			} );
+		} );
+	}
+
+	var slackDisconnectBtn = document.getElementById( 'blt-slack-disconnect' );
+	if ( slackDisconnectBtn ) {
+		slackDisconnectBtn.addEventListener( 'click', function () {
+			slackDisconnectBtn.disabled = true;
+			post( 'blt_secure_slack_delete', {} ).then( function () {
+				window.location.reload();
+			} );
+		} );
+	}
+
+	// Fleet enrollment token (Advanced tab).
+	var fleetConnectBtn = document.getElementById( 'blt-fleet-connect' );
+	if ( fleetConnectBtn ) {
+		fleetConnectBtn.addEventListener( 'click', function () {
+			var input = document.getElementById( 'blt-fleet-token' );
+			var status = document.getElementById( 'blt-fleet-status' );
+
+			fleetConnectBtn.disabled = true;
+			setMessage( status, cfg.i18n.working, false );
+
+			post( 'blt_secure_fleet_save', { token: input.value } ).then( function ( json ) {
+				if ( json.success ) {
+					window.location.reload();
+				} else {
+					fleetConnectBtn.disabled = false;
+					setMessage( status, json.data.message, true );
+				}
+			} ).catch( function () {
+				fleetConnectBtn.disabled = false;
+				setMessage( status, cfg.i18n.error, true );
+			} );
+		} );
+	}
+
+	var fleetDisconnectBtn = document.getElementById( 'blt-fleet-disconnect' );
+	if ( fleetDisconnectBtn ) {
+		fleetDisconnectBtn.addEventListener( 'click', function () {
+			fleetDisconnectBtn.disabled = true;
+			post( 'blt_secure_fleet_delete', {} ).then( function () {
+				window.location.reload();
+			} );
+		} );
+	}
+
+	var fleetReportBtn = document.getElementById( 'blt-fleet-report' );
+	if ( fleetReportBtn ) {
+		fleetReportBtn.addEventListener( 'click', function () {
+			var msg = document.getElementById( 'blt-fleet-msg' );
+			fleetReportBtn.disabled = true;
+			setMessage( msg, cfg.i18n.reporting, false );
+
+			post( 'blt_secure_fleet_report', {} ).then( function ( json ) {
+				fleetReportBtn.disabled = false;
+				setMessage( msg, ( json.data && json.data.message ) || '', ! json.success );
+			} ).catch( function () {
+				fleetReportBtn.disabled = false;
+				setMessage( msg, cfg.i18n.error, true );
+			} );
+		} );
+	}
+
 	// Health check: run a scan, then reload to render the fresh results.
 	var hcRunBtn = document.getElementById( 'blt-hc-run' );
 	if ( hcRunBtn ) {

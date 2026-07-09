@@ -54,10 +54,15 @@ if ( ! empty( $blt_secure_advanced['delete_data_on_uninstall'] ) ) {
 	delete_option( 'blt_secure_crypto_check' );
 	delete_option( 'blt_secure_cred_cf_token' );
 	delete_option( 'blt_secure_cred_github_token' );
+	delete_option( 'blt_secure_cred_slack_webhook' );
+	delete_option( 'blt_secure_cred_fleet_token' );
+	delete_option( 'blt_secure_fleet_state' );
 	delete_option( 'blt_secure_health_results' );
 	delete_option( 'blt_secure_core_scan_results' );
 	delete_option( 'blt_secure_malware_results' );
 	delete_option( 'blt_secure_ioc_state' );
+	delete_option( 'blt_secure_feed_changelog' );
+	delete_option( 'blt_secure_feed_snapshot' );
 	delete_option( 'blt_secure_cf_events' );
 	delete_option( 'blt_secure_baseline_results' );
 	delete_option( 'blt_secure_baselines' );
@@ -87,4 +92,5 @@ if ( ! empty( $blt_secure_advanced['delete_data_on_uninstall'] ) ) {
 	wp_clear_scheduled_hook( 'blt_secure_ioc_sync' );
 	wp_clear_scheduled_hook( 'blt_secure_timeline_poll' );
 	wp_clear_scheduled_hook( 'blt_secure_baseline_scan' );
+	wp_clear_scheduled_hook( 'blt_secure_fleet_report' );
 }

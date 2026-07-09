@@ -57,6 +57,11 @@ class Blt_Secure_Admin {
 		add_action( 'wp_ajax_blt_secure_cf_remove', array( $this, 'ajax_remove' ) );
 		add_action( 'wp_ajax_blt_secure_gh_save_token', array( $this, 'ajax_gh_save_token' ) );
 		add_action( 'wp_ajax_blt_secure_gh_delete_token', array( $this, 'ajax_gh_delete_token' ) );
+		add_action( 'wp_ajax_blt_secure_slack_save', array( $this, 'ajax_slack_save' ) );
+		add_action( 'wp_ajax_blt_secure_slack_delete', array( $this, 'ajax_slack_delete' ) );
+		add_action( 'wp_ajax_blt_secure_fleet_save', array( $this, 'ajax_fleet_save' ) );
+		add_action( 'wp_ajax_blt_secure_fleet_delete', array( $this, 'ajax_fleet_delete' ) );
+		add_action( 'wp_ajax_blt_secure_fleet_report', array( $this, 'ajax_fleet_report' ) );
 		add_action( 'admin_notices', array( $this, 'update_token_notice' ) );
 	}
 
@@ -180,6 +185,7 @@ class Blt_Secure_Admin {
 					'iocSync'   => __( 'Syncing threat-intel feeds…', 'blt-secure' ),
 					'polling'   => __( 'Polling Cloudflare…', 'blt-secure' ),
 					'baseScan'  => __( 'Checking plugin/theme integrity…', 'blt-secure' ),
+					'reporting' => __( 'Reporting to dashboard…', 'blt-secure' ),
 				),
 			)
 		);
@@ -197,7 +203,7 @@ class Blt_Secure_Admin {
 		printf(
 			'<div class="notice notice-error"><p><strong>%s</strong> %s <a href="%s">%s</a></p></div>',
 			esc_html__( 'BLT Secure:', 'blt-secure' ),
-			esc_html__( 'the WordPress security keys changed, so the stored credentials (Cloudflare token, GitHub updates token) could not be decrypted and were removed. Those features are paused until you re-enter them.', 'blt-secure' ),
+			esc_html__( 'the WordPress security keys changed, so the stored credentials (Cloudflare token, GitHub updates token, Slack webhook) could not be decrypted and were removed. Those features are paused until you re-enter them.', 'blt-secure' ),
 			esc_url( admin_url( 'admin.php?page=blt-secure&tab=cloudflare' ) ),
 			esc_html__( 'Re-enter tokens', 'blt-secure' )
 		);
@@ -514,6 +520,122 @@ class Blt_Secure_Admin {
 		$this->plugin->credentials->delete( Blt_Secure_Updater::TOKEN_KEY );
 
 		wp_send_json_success( array( 'message' => __( 'Token removed. Update checks against the private repository will stop working.', 'blt-secure' ) ) );
+	}
+
+	/**
+	 * Save a Slack incoming-webhook URL (stored encrypted) and send a test.
+	 *
+	 * @return void
+	 */
+	public function ajax_slack_save() {
+		$this->guard();
+
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- guard() ran check_ajax_referer.
+		$webhook = isset( $_POST['webhook'] ) ? esc_url_raw( wp_unslash( $_POST['webhook'] ) ) : '';
+		if ( '' === $webhook || 0 !== strpos( $webhook, 'https://' ) ) {
+			wp_send_json_error( array( 'message' => __( 'Enter a valid https Slack webhook URL.', 'blt-secure' ) ) );
+		}
+
+		if ( ! $this->plugin->credentials->is_available() ) {
+			wp_send_json_error( array( 'message' => __( 'This server has no authenticated-encryption support; the webhook cannot be stored safely and was NOT saved.', 'blt-secure' ) ) );
+		}
+
+		// Prove the webhook works before storing it.
+		$test = wp_remote_post(
+			$webhook,
+			array(
+				'timeout' => 10,
+				'headers' => array( 'Content-Type' => 'application/json' ),
+				'body'    => wp_json_encode( Blt_Secure_Alert_Channels::slack_payload( __( 'BLT Secure: Slack alerts are now connected.', 'blt-secure' ) ) ),
+			)
+		);
+		if ( is_wp_error( $test ) ) {
+			wp_send_json_error( array( 'message' => $test->get_error_message() ) );
+		}
+		if ( 200 !== (int) wp_remote_retrieve_response_code( $test ) ) {
+			wp_send_json_error( array( 'message' => __( 'Slack rejected the webhook. Double-check the URL.', 'blt-secure' ) ) );
+		}
+
+		$stored = $this->plugin->credentials->set( 'slack_webhook', $webhook );
+		if ( is_wp_error( $stored ) ) {
+			wp_send_json_error( array( 'message' => $stored->get_error_message() ) );
+		}
+
+		wp_send_json_success( array( 'message' => __( 'Webhook verified and stored. A test message was sent to your Slack channel.', 'blt-secure' ) ) );
+	}
+
+	/**
+	 * Forget the Slack webhook.
+	 *
+	 * @return void
+	 */
+	public function ajax_slack_delete() {
+		$this->guard();
+
+		$this->plugin->credentials->delete( 'slack_webhook' );
+
+		wp_send_json_success( array( 'message' => __( 'Slack webhook removed.', 'blt-secure' ) ) );
+	}
+
+	/**
+	 * Store the per-site fleet token (encrypted).
+	 *
+	 * @return void
+	 */
+	public function ajax_fleet_save() {
+		$this->guard();
+
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- guard() ran check_ajax_referer.
+		$token = isset( $_POST['token'] ) ? sanitize_text_field( wp_unslash( $_POST['token'] ) ) : '';
+		if ( '' === $token ) {
+			wp_send_json_error( array( 'message' => __( 'Enrollment token is empty.', 'blt-secure' ) ) );
+		}
+		if ( ! $this->plugin->credentials->is_available() ) {
+			wp_send_json_error( array( 'message' => __( 'This server has no authenticated-encryption support; the token cannot be stored safely and was NOT saved.', 'blt-secure' ) ) );
+		}
+
+		$stored = $this->plugin->credentials->set( Blt_Secure_Fleet::TOKEN_KEY, $token );
+		if ( is_wp_error( $stored ) ) {
+			wp_send_json_error( array( 'message' => $stored->get_error_message() ) );
+		}
+
+		wp_send_json_success( array( 'message' => __( 'Enrollment token stored. Enable fleet reporting and save, then send a report.', 'blt-secure' ) ) );
+	}
+
+	/**
+	 * Forget the fleet token.
+	 *
+	 * @return void
+	 */
+	public function ajax_fleet_delete() {
+		$this->guard();
+
+		$this->plugin->credentials->delete( Blt_Secure_Fleet::TOKEN_KEY );
+
+		wp_send_json_success( array( 'message' => __( 'Fleet token removed.', 'blt-secure' ) ) );
+	}
+
+	/**
+	 * Send a fleet report now.
+	 *
+	 * @return void
+	 */
+	public function ajax_fleet_report() {
+		$this->guard();
+
+		if ( ! isset( $this->plugin->modules['fleet'] ) ) {
+			wp_send_json_error( array( 'message' => __( 'Fleet reporting is unavailable.', 'blt-secure' ) ) );
+		}
+
+		$result = $this->plugin->modules['fleet']->report();
+		if ( isset( $result['status'] ) && 'ok' === $result['status'] ) {
+			wp_send_json_success( array( 'message' => __( 'Report sent to the dashboard.', 'blt-secure' ) ) );
+		}
+
+		$message = 'not_configured' === $result['status']
+			? __( 'Set the dashboard endpoint (and enable + save) and store an enrollment token first.', 'blt-secure' )
+			: ( isset( $result['error'] ) ? $result['error'] : __( 'The report could not be sent.', 'blt-secure' ) );
+		wp_send_json_error( array( 'message' => $message ) );
 	}
 
 	/**
