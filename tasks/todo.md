@@ -56,6 +56,7 @@
 - [ ] IOC sync: enable a feed in feeds/feeds.json (e.g. spamhaus-drop) with a connected CF token → Advanced tab → "Sync now" → confirm the `blt_secure_iocs` IP List is created/populated in the CF dashboard and a `blt-secure-ioc-block` custom rule references it; with a token lacking Account Filter Lists edit, confirm the scope hint appears; confirm the daily `blt_secure_ioc_sync` cron is scheduled and removal (uninstall opt-in) deletes rule + list.
 - [ ] Timeline: with a CF token that has Analytics read, open the Timeline tab → "Refresh from Cloudflare" → confirm recent edge firewall events appear interleaved with local events (Edge/Site badges), newest first; with a token lacking Analytics read, confirm the scope hint; confirm the hourly `blt_secure_timeline_poll` cron is scheduled.
 - [ ] Baseline: Scanner tab → "Check integrity now" records the baseline on first run (no findings); edit a file in an installed plugin without changing its version → re-check → the plugin is flagged with the changed file; update/replace the plugin (version bump) → re-check → it re-baselines clean; confirm the `plugin_theme_integrity` check appears on the Health Check tab and the weekly `blt_secure_baseline_scan` cron is scheduled.
+- [ ] Alerts: Advanced tab → save a Slack webhook (confirm the test message arrives and the URL stores encrypted), enable email + Slack → trigger a lockout (5 bad logins) → confirm one email + one Slack message arrive and a second lockout within 15 min is throttled; confirm routine events (e.g. plugin activation) do NOT notify.
 - [ ] Release workflow dry run: temporarily add a `test/release-dry-run` branch trigger with `draft: true` on the release step, push, download + unzip-verify the draft asset, then remove the test trigger. (workflow_dispatch only appears once the workflow file is on main.)
 
 ## Phase 2 — Detection & Monitoring (complete)
@@ -78,10 +79,11 @@
 - [x] **Malicious upload detection (local)** — `Blt_Secure_Upload_Guard` rejects uploads at `wp_handle_upload_prefilter` that are PHP by extension (including double-extension `.php.jpg`) or carry a PHP open tag anywhere in the first 8 MB (disguised polyglot); FP-safe (no signature scan of binary media); blocked uploads raise a `blocked_upload` alert. Pure helpers (`dangerous_extension`, `has_php_open_tag`, `danger_reason`) unit-tested. *(CF-signal side remains under the Cloudflare track.)*
 - [x] **feeds/feeds.json loader** — `Blt_Secure_Feeds` parses/validates the feed catalogue into normalized, filterable descriptors (`all`/`enabled`/`by_format`/`get`), rejecting entries with a bad id, non-http(s) url, or unsupported format; extendable via the `blt_secure_feeds` filter; no network I/O (consumers fetch). Pure helpers (`valid_format`, `normalize_feed`) unit-tested. Foundation for the YARA-signature and IOC consumers below.
 
-## Phase 3 — Fleet Management (not started)
+## Phase 3 — Fleet Management (in progress)
 
-- [ ] Central dashboard (CF Workers + D1)
-- [ ] Worker/KV credential store backend (swap for Blt_Secure_Encrypted_Option_Store)
-- [ ] Slack/email alerting channels behind Blt_Secure_Alerting
-- [ ] Scheduled feed updates w/ changelog
+- [x] **Slack/email alerting channels** — `Blt_Secure_Alert_Channels` subscribes to the `blt_secure_alert` action and forwards high-signal events to email (`wp_mail`) and Slack (incoming webhook).
+  - AC: notify allowlist defaults to high-signal types (lockout, blocked plugin/upload, malware/core/baseline findings, admin-granted), filterable via `blt_secure_alert_notify_types`; per-type throttle (default 900s, filterable via `blt_secure_alert_throttle`) prevents floods; email recipient falls back to `admin_email`; Slack webhook stored encrypted via the credential store, verified with a test post on save, managed on the Advanced tab; pure helpers (`should_notify`, `format`, `slack_payload`, `type_label`) unit-tested; no-ops when both channels are off.
+- [ ] Scheduled feed updates w/ changelog (auto-refresh feeds.json-driven sources; the IOC sync already runs daily — this adds change tracking/notification)
 - [ ] Client-facing status page / trust badge
+- [ ] Central dashboard (CF Workers + D1) — hosted component; needs infra decisions (hosting, auth, per-site enrollment)
+- [ ] Worker/KV credential store backend (swap for Blt_Secure_Encrypted_Option_Store) — depends on the hosted dashboard

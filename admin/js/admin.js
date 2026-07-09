@@ -109,6 +109,41 @@
 		} );
 	}
 
+	// Slack webhook (Advanced tab) — same flow as the GitHub token.
+	var slackConnectBtn = document.getElementById( 'blt-slack-connect' );
+	if ( slackConnectBtn ) {
+		slackConnectBtn.addEventListener( 'click', function () {
+			var input = document.getElementById( 'blt-slack-webhook' );
+			var status = document.getElementById( 'blt-slack-status' );
+
+			slackConnectBtn.disabled = true;
+			setMessage( status, cfg.i18n.working, false );
+
+			post( 'blt_secure_slack_save', { webhook: input.value } ).then( function ( json ) {
+				if ( json.success ) {
+					setMessage( status, json.data.message, false );
+					window.location.reload();
+				} else {
+					slackConnectBtn.disabled = false;
+					setMessage( status, json.data.message, true );
+				}
+			} ).catch( function () {
+				slackConnectBtn.disabled = false;
+				setMessage( status, cfg.i18n.error, true );
+			} );
+		} );
+	}
+
+	var slackDisconnectBtn = document.getElementById( 'blt-slack-disconnect' );
+	if ( slackDisconnectBtn ) {
+		slackDisconnectBtn.addEventListener( 'click', function () {
+			slackDisconnectBtn.disabled = true;
+			post( 'blt_secure_slack_delete', {} ).then( function () {
+				window.location.reload();
+			} );
+		} );
+	}
+
 	// Health check: run a scan, then reload to render the fresh results.
 	var hcRunBtn = document.getElementById( 'blt-hc-run' );
 	if ( hcRunBtn ) {

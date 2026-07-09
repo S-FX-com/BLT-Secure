@@ -91,6 +91,7 @@ final class Blt_Secure {
 
 		$modules = array(
 			$alerting,
+			new Blt_Secure_Alert_Channels( $this->options, $this->credentials ),
 			new Blt_Secure_Activity( $this->options, $alerting ),
 			new Blt_Secure_Upload_Guard( $this->options, $alerting ),
 			new Blt_Secure_Headers( $this->options ),

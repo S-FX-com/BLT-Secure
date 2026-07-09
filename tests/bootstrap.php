@@ -375,6 +375,7 @@ $blt_test_requires = array(
 	'includes/feeds/class-feeds.php',
 	'includes/feeds/class-ioc-parser.php',
 	'includes/modules/class-alerting.php',
+	'includes/modules/class-alert-channels.php',
 	'includes/modules/class-activity.php',
 	'includes/modules/class-upload-guard.php',
 	'includes/modules/class-login-hardening.php',

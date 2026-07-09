@@ -54,6 +54,7 @@ if ( ! empty( $blt_secure_advanced['delete_data_on_uninstall'] ) ) {
 	delete_option( 'blt_secure_crypto_check' );
 	delete_option( 'blt_secure_cred_cf_token' );
 	delete_option( 'blt_secure_cred_github_token' );
+	delete_option( 'blt_secure_cred_slack_webhook' );
 	delete_option( 'blt_secure_health_results' );
 	delete_option( 'blt_secure_core_scan_results' );
 	delete_option( 'blt_secure_malware_results' );
