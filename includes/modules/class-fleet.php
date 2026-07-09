@@ -22,6 +22,7 @@ class Blt_Secure_Fleet implements Blt_Secure_Module {
 
 	const RESULTS_OPTION = 'blt_secure_fleet_state';
 	const CRON_HOOK      = 'blt_secure_fleet_report';
+	const PULL_HOOK      = 'blt_secure_fleet_pull';
 	const TOKEN_KEY      = 'fleet_token';
 
 	/**
@@ -44,14 +45,23 @@ class Blt_Secure_Fleet implements Blt_Secure_Module {
 	private $credentials;
 
 	/**
+	 * Alerting sink for command-execution audit entries.
+	 *
+	 * @var Blt_Secure_Alerting|null
+	 */
+	private $alerting;
+
+	/**
 	 * Constructor.
 	 *
 	 * @param Blt_Secure_Options          $options     Settings access.
 	 * @param Blt_Secure_Credential_Store $credentials Credential store.
+	 * @param Blt_Secure_Alerting|null    $alerting    Alerting sink (optional).
 	 */
-	public function __construct( Blt_Secure_Options $options, Blt_Secure_Credential_Store $credentials ) {
+	public function __construct( Blt_Secure_Options $options, Blt_Secure_Credential_Store $credentials, $alerting = null ) {
 		$this->options     = $options;
 		$this->credentials = $credentials;
+		$this->alerting    = $alerting;
 	}
 
 	/**
@@ -73,6 +83,7 @@ class Blt_Secure_Fleet implements Blt_Secure_Module {
 			'enabled'  => false,
 			'endpoint' => '',
 			'schedule' => true,
+			'commands' => false,
 		);
 	}
 
@@ -94,6 +105,10 @@ class Blt_Secure_Fleet implements Blt_Secure_Module {
 		add_action( self::CRON_HOOK, array( $this, 'report' ) );
 		add_action( 'blt_secure_alert', array( $this, 'maybe_push_alert' ), 20, 2 );
 
+		if ( $this->options->get( 'fleet', 'commands', false ) ) {
+			add_action( self::PULL_HOOK, array( $this, 'pull' ) );
+		}
+
 		if ( $this->options->get( 'fleet', 'schedule', true ) ) {
 			add_action( 'admin_init', array( $this, 'ensure_scheduled' ) );
 		}
@@ -112,6 +127,7 @@ class Blt_Secure_Fleet implements Blt_Secure_Module {
 			'enabled'  => ! empty( $input['enabled'] ),
 			'endpoint' => $endpoint,
 			'schedule' => ! empty( $input['schedule'] ),
+			'commands' => ! empty( $input['commands'] ),
 		);
 	}
 
@@ -123,6 +139,14 @@ class Blt_Secure_Fleet implements Blt_Secure_Module {
 	public function ensure_scheduled() {
 		if ( ! wp_next_scheduled( self::CRON_HOOK ) ) {
 			wp_schedule_event( time() + HOUR_IN_SECONDS, 'daily', self::CRON_HOOK );
+		}
+
+		if ( $this->options->get( 'fleet', 'commands', false ) ) {
+			if ( ! wp_next_scheduled( self::PULL_HOOK ) ) {
+				wp_schedule_event( time() + ( 15 * MINUTE_IN_SECONDS ), 'hourly', self::PULL_HOOK );
+			}
+		} elseif ( wp_next_scheduled( self::PULL_HOOK ) ) {
+			wp_clear_scheduled_hook( self::PULL_HOOK );
 		}
 	}
 
@@ -151,6 +175,80 @@ class Blt_Secure_Fleet implements Blt_Secure_Module {
 	 */
 	public static function sign( $ts, $body, $secret ) {
 		return hash_hmac( 'sha256', (int) $ts . '.' . (string) $body, (string) $secret );
+	}
+
+	/**
+	 * Whitelist of remotely-triggerable commands mapped to the local WP-Cron
+	 * action that performs the work. Only these commands are ever executed;
+	 * anything else the dashboard sends is ignored.
+	 *
+	 * Every action is a parameterless scan/sync trigger already registered by
+	 * its own module — the receiver never passes operator-supplied parameters
+	 * into local code.
+	 *
+	 * @return array<string,string> Command slug => WP-Cron action hook.
+	 */
+	public static function command_map() {
+		return array(
+			'scan_core'     => 'blt_secure_core_scan',
+			'scan_malware'  => 'blt_secure_malware_scan',
+			'scan_baseline' => 'blt_secure_baseline_scan',
+			'sync_ioc'      => 'blt_secure_ioc_sync',
+			'health_scan'   => 'blt_secure_health_scan',
+			'report'        => self::CRON_HOOK,
+		);
+	}
+
+	/**
+	 * Resolve a command slug to its local action hook, or null if unknown.
+	 *
+	 * Pure function (unit-tested).
+	 *
+	 * @param string $command Command slug.
+	 * @return string|null
+	 */
+	public static function hook_for( $command ) {
+		$map = self::command_map();
+		return isset( $map[ (string) $command ] ) ? $map[ (string) $command ] : null;
+	}
+
+	/**
+	 * Normalize and whitelist the command list from a `/v1/commands` response.
+	 * Malformed entries and unknown/unsupported commands are dropped; operator
+	 * parameters are deliberately discarded.
+	 *
+	 * Pure function (unit-tested).
+	 *
+	 * @param mixed $decoded Decoded JSON body.
+	 * @return array<int,array{id:int,command:string}>
+	 */
+	public static function parse_commands( $decoded ) {
+		if ( ! is_array( $decoded ) || ! isset( $decoded['commands'] ) || ! is_array( $decoded['commands'] ) ) {
+			return array();
+		}
+
+		$map  = self::command_map();
+		$out  = array();
+		$seen = array();
+
+		foreach ( $decoded['commands'] as $entry ) {
+			if ( ! is_array( $entry ) ) {
+				continue;
+			}
+			$id      = isset( $entry['id'] ) ? (int) $entry['id'] : 0;
+			$command = isset( $entry['command'] ) ? (string) $entry['command'] : '';
+
+			if ( $id <= 0 || ! isset( $map[ $command ] ) || isset( $seen[ $id ] ) ) {
+				continue;
+			}
+			$seen[ $id ] = true;
+			$out[]       = array(
+				'id'      => $id,
+				'command' => $command,
+			);
+		}
+
+		return $out;
 	}
 
 	/**
@@ -340,6 +438,113 @@ class Blt_Secure_Fleet implements Blt_Secure_Module {
 		}
 		set_transient( 'blt_sec_fleet_push', 1, self::PUSH_THROTTLE );
 		$this->report();
+	}
+
+	// ---------------------------------------------------------------------
+	// Remote-command receiver (pull model).
+	// ---------------------------------------------------------------------
+
+	/**
+	 * Pull queued commands from the dashboard, execute the whitelisted ones,
+	 * and acknowledge them. Signed with the per-site token (HMAC over an empty
+	 * body, matching the ingest contract) so a spoofed endpoint cannot forge a
+	 * command list a MITM would still fail the signature check on the ack.
+	 *
+	 * @return int[] IDs of executed commands.
+	 */
+	public function pull() {
+		$endpoint = rtrim( (string) $this->options->get( 'fleet', 'endpoint', '' ), '/' );
+		$token    = $this->credentials->get( self::TOKEN_KEY );
+
+		if ( '' === $endpoint || ! is_string( $token ) || '' === $token ) {
+			return array();
+		}
+
+		$ts       = time();
+		$response = wp_remote_get(
+			$endpoint . '/v1/commands',
+			array(
+				'timeout' => 15,
+				'headers' => array(
+					'Authorization'   => 'Bearer ' . $token,
+					'X-BLT-Timestamp' => (string) $ts,
+					'X-BLT-Signature' => self::sign( $ts, '', $token ),
+				),
+			)
+		);
+
+		if ( is_wp_error( $response ) ) {
+			return array();
+		}
+		$code = (int) wp_remote_retrieve_response_code( $response );
+		if ( $code < 200 || $code >= 300 ) {
+			return array();
+		}
+
+		$decoded  = json_decode( (string) wp_remote_retrieve_body( $response ), true );
+		$commands = self::parse_commands( $decoded );
+		if ( empty( $commands ) ) {
+			return array();
+		}
+
+		$done = array();
+		foreach ( $commands as $command ) {
+			$this->execute( $command['command'] );
+			$done[] = $command['id'];
+		}
+
+		$this->ack( $endpoint, $token, $done );
+		return $done;
+	}
+
+	/**
+	 * Run one whitelisted command by firing its local WP-Cron action, and
+	 * record an audit event. Unknown commands are ignored; if the owning
+	 * module is disabled the action simply has no listener (a safe no-op).
+	 *
+	 * @param string $command Command slug.
+	 * @return void
+	 */
+	private function execute( $command ) {
+		$hook = self::hook_for( $command );
+		if ( null === $hook ) {
+			return;
+		}
+		if ( $this->alerting ) {
+			$this->alerting->notify( 'fleet_command', array( 'command' => $command ) );
+		}
+		// $hook is always a blt_secure_* action from the command_map() whitelist.
+		do_action( $hook ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.DynamicHooknameFound
+	}
+
+	/**
+	 * Acknowledge executed commands so the dashboard marks them done.
+	 *
+	 * @param string $endpoint Dashboard base URL (no trailing slash).
+	 * @param string $token    Per-site token.
+	 * @param int[]  $ids      Executed command IDs.
+	 * @return void
+	 */
+	private function ack( $endpoint, $token, array $ids ) {
+		if ( empty( $ids ) ) {
+			return;
+		}
+		$body = (string) wp_json_encode( array( 'ids' => array_values( $ids ) ) );
+		$ts   = time();
+
+		wp_remote_post(
+			$endpoint . '/v1/commands/ack',
+			array(
+				'timeout' => 15,
+				'headers' => array(
+					'Authorization'   => 'Bearer ' . $token,
+					'Content-Type'    => 'application/json',
+					'X-BLT-Timestamp' => (string) $ts,
+					'X-BLT-Signature' => self::sign( $ts, $body, $token ),
+				),
+				'body'    => $body,
+			)
+		);
 	}
 
 	/**

@@ -139,6 +139,30 @@ export default {
 				return json( { commands } );
 			}
 
+			// ---- Ack executed commands (pull model) -----------------------
+			if ( 'POST' === request.method && '/v1/commands/ack' === pathname ) {
+				const body = await request.text();
+				if ( body.length > MAX_BODY ) {
+					return json( { error: 'body too large' }, 413 );
+				}
+				const auth = await authenticate( request, env, body );
+				if ( auth.response ) {
+					return auth.response;
+				}
+				let ids;
+				try {
+					ids = JSON.parse( body ).ids;
+				} catch ( e ) {
+					return json( { error: 'invalid json' }, 400 );
+				}
+				if ( ! Array.isArray( ids ) ) {
+					return json( { error: 'ids array required' }, 400 );
+				}
+				const clean = db.sanitizeIds( ids );
+				await db.markDone( env.DB, auth.site.id, clean, now );
+				return json( { ok: true, done: clean.length } );
+			}
+
 			// ---- Operator: enroll a site ----------------------------------
 			if ( 'POST' === request.method && '/admin/sites' === pathname ) {
 				const blocked = guardOperator( request, env );

@@ -80,4 +80,45 @@ class Test_Fleet extends TestCase {
 			$this->assertStringNotContainsStringIgnoringCase( $needle, $json );
 		}
 	}
+
+	public function test_hook_for_maps_only_whitelisted_commands() {
+		$this->assertSame( 'blt_secure_core_scan', Blt_Secure_Fleet::hook_for( 'scan_core' ) );
+		$this->assertSame( 'blt_secure_malware_scan', Blt_Secure_Fleet::hook_for( 'scan_malware' ) );
+		$this->assertSame( Blt_Secure_Fleet::CRON_HOOK, Blt_Secure_Fleet::hook_for( 'report' ) );
+		$this->assertNull( Blt_Secure_Fleet::hook_for( 'rm_rf' ) );
+		$this->assertNull( Blt_Secure_Fleet::hook_for( '' ) );
+	}
+
+	public function test_parse_commands_whitelists_and_normalizes() {
+		$parsed = Blt_Secure_Fleet::parse_commands(
+			array(
+				'commands' => array(
+					array( 'id' => 5, 'command' => 'scan_core', 'params' => array( 'evil' => true ) ),
+					array( 'id' => '6', 'command' => 'sync_ioc' ),
+					array( 'id' => 7, 'command' => 'delete_everything' ), // not whitelisted.
+					array( 'id' => 0, 'command' => 'scan_core' ),          // bad id.
+					array( 'command' => 'scan_core' ),                     // no id.
+					'not-an-array',
+					array( 'id' => 5, 'command' => 'health_scan' ),        // duplicate id.
+				),
+			)
+		);
+
+		$this->assertSame(
+			array(
+				array( 'id' => 5, 'command' => 'scan_core' ),
+				array( 'id' => 6, 'command' => 'sync_ioc' ),
+			),
+			$parsed
+		);
+		// Operator params are never carried through.
+		$this->assertArrayNotHasKey( 'params', $parsed[0] );
+	}
+
+	public function test_parse_commands_handles_malformed_bodies() {
+		$this->assertSame( array(), Blt_Secure_Fleet::parse_commands( null ) );
+		$this->assertSame( array(), Blt_Secure_Fleet::parse_commands( 'x' ) );
+		$this->assertSame( array(), Blt_Secure_Fleet::parse_commands( array() ) );
+		$this->assertSame( array(), Blt_Secure_Fleet::parse_commands( array( 'commands' => 'nope' ) ) );
+	}
 }

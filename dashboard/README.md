@@ -52,10 +52,22 @@ than a few minutes (replay protection), then upsert the snapshot.
 
 ## Command contract (Worker → plugin) — v1 remote actions
 
-Deferred to the remote-actions step. Decision still open: **pull** (plugin
-polls `GET {endpoint}/v1/commands` on cron and executes queued commands) vs
-**push** (Worker calls an authenticated WP REST route on the site). Pull is
-favored — it adds no inbound control surface to client sites — but the
-choice is confirmed when that piece is built. Whichever is chosen, commands
-are signed the same way and every executed command is recorded to the local
-event log.
+**Pull model** (chosen — it adds no inbound control surface to client sites).
+
+1. The plugin polls `GET {endpoint}/v1/commands` hourly (opt-in), signed with
+   the per-site token + HMAC (over an empty body). The Worker returns pending
+   commands and marks them `delivered`:
+   ```json
+   { "commands": [ { "id": 12, "command": "scan_core", "params": {} } ] }
+   ```
+2. The plugin runs only whitelisted commands — `scan_core`, `scan_malware`,
+   `scan_baseline`, `sync_ioc`, `health_scan`, `report` — by firing the local
+   WP-Cron action each already owns. Unknown commands and any operator-supplied
+   `params` are ignored, so the receiver can never run arbitrary code. Each
+   executed command is recorded to the local event log (`fleet_command`).
+3. The plugin acknowledges with `POST {endpoint}/v1/commands/ack`
+   (`{ "ids": [12] }`, same signing); the Worker moves those rows to `done`,
+   scoped to the acknowledging site.
+
+Operators queue work with `POST /admin/commands` (`{ site_id, command }`),
+behind Cloudflare Access.

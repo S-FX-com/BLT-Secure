@@ -112,6 +112,38 @@ export async function markDelivered( db, ids, now ) {
 }
 
 /**
+ * Coerce an untrusted ack `ids` value into a list of positive integers.
+ * @param {unknown} ids
+ * @returns {number[]}
+ */
+export function sanitizeIds( ids ) {
+	if ( ! Array.isArray( ids ) ) {
+		return [];
+	}
+	return ids.map( Number ).filter( ( n ) => Number.isInteger( n ) && n > 0 );
+}
+
+/**
+ * Mark delivered commands done, scoped to the acknowledging site so one site
+ * can never close another's commands.
+ * @param {D1Database} db
+ * @param {number} siteId
+ * @param {number[]} ids
+ * @param {number} now
+ * @returns {Promise<void>}
+ */
+export async function markDone( db, siteId, ids, now ) {
+	if ( ! ids.length ) {
+		return;
+	}
+	const stmt = db.prepare(
+		"UPDATE commands SET status = 'done', delivered_at = COALESCE(delivered_at, ?) " +
+			"WHERE id = ? AND site_id = ? AND status = 'delivered'"
+	);
+	await db.batch( ids.map( ( id ) => stmt.bind( now, id, siteId ) ) );
+}
+
+/**
  * List all sites with their latest snapshot payload (for the UI).
  * @param {D1Database} db
  * @returns {Promise<object[]>}
