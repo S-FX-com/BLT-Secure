@@ -144,6 +144,57 @@
 		} );
 	}
 
+	// Fleet enrollment token (Advanced tab).
+	var fleetConnectBtn = document.getElementById( 'blt-fleet-connect' );
+	if ( fleetConnectBtn ) {
+		fleetConnectBtn.addEventListener( 'click', function () {
+			var input = document.getElementById( 'blt-fleet-token' );
+			var status = document.getElementById( 'blt-fleet-status' );
+
+			fleetConnectBtn.disabled = true;
+			setMessage( status, cfg.i18n.working, false );
+
+			post( 'blt_secure_fleet_save', { token: input.value } ).then( function ( json ) {
+				if ( json.success ) {
+					window.location.reload();
+				} else {
+					fleetConnectBtn.disabled = false;
+					setMessage( status, json.data.message, true );
+				}
+			} ).catch( function () {
+				fleetConnectBtn.disabled = false;
+				setMessage( status, cfg.i18n.error, true );
+			} );
+		} );
+	}
+
+	var fleetDisconnectBtn = document.getElementById( 'blt-fleet-disconnect' );
+	if ( fleetDisconnectBtn ) {
+		fleetDisconnectBtn.addEventListener( 'click', function () {
+			fleetDisconnectBtn.disabled = true;
+			post( 'blt_secure_fleet_delete', {} ).then( function () {
+				window.location.reload();
+			} );
+		} );
+	}
+
+	var fleetReportBtn = document.getElementById( 'blt-fleet-report' );
+	if ( fleetReportBtn ) {
+		fleetReportBtn.addEventListener( 'click', function () {
+			var msg = document.getElementById( 'blt-fleet-msg' );
+			fleetReportBtn.disabled = true;
+			setMessage( msg, cfg.i18n.reporting, false );
+
+			post( 'blt_secure_fleet_report', {} ).then( function ( json ) {
+				fleetReportBtn.disabled = false;
+				setMessage( msg, ( json.data && json.data.message ) || '', ! json.success );
+			} ).catch( function () {
+				fleetReportBtn.disabled = false;
+				setMessage( msg, cfg.i18n.error, true );
+			} );
+		} );
+	}
+
 	// Health check: run a scan, then reload to render the fresh results.
 	var hcRunBtn = document.getElementById( 'blt-hc-run' );
 	if ( hcRunBtn ) {

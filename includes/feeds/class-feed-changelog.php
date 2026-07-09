@@ -30,14 +30,14 @@ class Blt_Secure_Feed_Changelog {
 	 *
 	 * Pure function (unit-tested).
 	 *
-	 * @param string[] $old Previous indicators.
-	 * @param string[] $new Current indicators.
+	 * @param string[] $previous Previous indicators.
+	 * @param string[] $current  Current indicators.
 	 * @return array{added:string[],removed:string[]}
 	 */
-	public static function diff_sets( array $old, array $new ) {
+	public static function diff_sets( array $previous, array $current ) {
 		return array(
-			'added'   => array_values( array_diff( $new, $old ) ),
-			'removed' => array_values( array_diff( $old, $new ) ),
+			'added'   => array_values( array_diff( $current, $previous ) ),
+			'removed' => array_values( array_diff( $previous, $current ) ),
 		);
 	}
 
