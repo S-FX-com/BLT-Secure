@@ -176,6 +176,7 @@ class Blt_Secure_Admin {
 					'scanning'  => __( 'Running checks…', 'blt-secure' ),
 					'scanError' => __( 'The scan could not be completed.', 'blt-secure' ),
 					'coreScan'  => __( 'Scanning core files…', 'blt-secure' ),
+					'malScan'   => __( 'Scanning wp-content for malware…', 'blt-secure' ),
 				),
 			)
 		);
@@ -269,6 +270,7 @@ class Blt_Secure_Admin {
 		$admin    = $this;
 		$health   = isset( $this->plugin->modules['health'] ) ? $this->plugin->modules['health'] : null;
 		$scanner  = isset( $this->plugin->modules['scanner'] ) ? $this->plugin->modules['scanner'] : null;
+		$malware  = isset( $this->plugin->modules['malware'] ) ? $this->plugin->modules['malware'] : null;
 
 		require BLT_SECURE_DIR . 'admin/views/settings-page.php';
 	}

@@ -46,6 +46,8 @@ require_once BLT_SECURE_DIR . 'includes/health/class-health-checks.php';
 require_once BLT_SECURE_DIR . 'includes/modules/class-health.php';
 require_once BLT_SECURE_DIR . 'includes/scanner/class-core-scanner.php';
 require_once BLT_SECURE_DIR . 'includes/modules/class-scanner.php';
+require_once BLT_SECURE_DIR . 'includes/scanner/class-malware-scanner.php';
+require_once BLT_SECURE_DIR . 'includes/modules/class-malware.php';
 require_once BLT_SECURE_DIR . 'includes/class-updater.php';
 require_once BLT_SECURE_DIR . 'includes/class-blt-secure.php';
 
