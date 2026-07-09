@@ -177,6 +177,9 @@ class Blt_Secure_Admin {
 					'scanError' => __( 'The scan could not be completed.', 'blt-secure' ),
 					'coreScan'  => __( 'Scanning core files…', 'blt-secure' ),
 					'malScan'   => __( 'Scanning wp-content for malware…', 'blt-secure' ),
+					'iocSync'   => __( 'Syncing threat-intel feeds…', 'blt-secure' ),
+					'polling'   => __( 'Polling Cloudflare…', 'blt-secure' ),
+					'baseScan'  => __( 'Checking plugin/theme integrity…', 'blt-secure' ),
 				),
 			)
 		);
@@ -257,6 +260,7 @@ class Blt_Secure_Admin {
 			'login'      => __( 'Login', 'blt-secure' ),
 			'health'     => __( 'Health Check', 'blt-secure' ),
 			'scanner'    => __( 'Scanner', 'blt-secure' ),
+			'timeline'   => __( 'Timeline', 'blt-secure' ),
 			'cloudflare' => __( 'Cloudflare', 'blt-secure' ),
 			'advanced'   => __( 'Advanced', 'blt-secure' ),
 		);
@@ -271,6 +275,9 @@ class Blt_Secure_Admin {
 		$health   = isset( $this->plugin->modules['health'] ) ? $this->plugin->modules['health'] : null;
 		$scanner  = isset( $this->plugin->modules['scanner'] ) ? $this->plugin->modules['scanner'] : null;
 		$malware  = isset( $this->plugin->modules['malware'] ) ? $this->plugin->modules['malware'] : null;
+		$baseline = isset( $this->plugin->modules['baseline'] ) ? $this->plugin->modules['baseline'] : null;
+		$ioc      = isset( $this->plugin->modules['ioc'] ) ? $this->plugin->modules['ioc'] : null;
+		$timeline = isset( $this->plugin->modules['timeline'] ) ? $this->plugin->modules['timeline'] : null;
 
 		require BLT_SECURE_DIR . 'admin/views/settings-page.php';
 	}

@@ -106,6 +106,68 @@ class Blt_Secure_Cloudflare_Api {
 	}
 
 	/**
+	 * Run a GraphQL analytics query. The GraphQL endpoint uses a different
+	 * envelope than the REST API ({data, errors} rather than {success,
+	 * result}), so it gets its own path here.
+	 *
+	 * @param string $query     GraphQL query document.
+	 * @param array  $variables Query variables.
+	 * @return array|WP_Error The `data` member on success.
+	 */
+	public function graphql( $query, array $variables = array() ) {
+		$args = array(
+			'method'  => 'POST',
+			'timeout' => 20,
+			'headers' => array(
+				'Authorization' => 'Bearer ' . $this->token,
+				'Content-Type'  => 'application/json',
+			),
+			'body'    => wp_json_encode(
+				array(
+					'query'     => $query,
+					'variables' => $variables,
+				)
+			),
+		);
+
+		$response = call_user_func( $this->transport, self::BASE . '/graphql', $args );
+		if ( is_wp_error( $response ) ) {
+			return new WP_Error( 'blt_cf_http', $response->get_error_message() );
+		}
+
+		$status  = (int) wp_remote_retrieve_response_code( $response );
+		$decoded = json_decode( wp_remote_retrieve_body( $response ), true );
+
+		if ( ! is_array( $decoded ) ) {
+			return new WP_Error(
+				'blt_cf_http',
+				sprintf(
+					/* translators: %d: HTTP status code */
+					__( 'Cloudflare returned an unreadable GraphQL response (HTTP %d).', 'blt-secure' ),
+					$status
+				)
+			);
+		}
+
+		if ( 401 === $status || 403 === $status ) {
+			return new WP_Error(
+				403 === $status ? 'blt_cf_scope' : 'blt_cf_auth',
+				__( 'The Cloudflare token cannot read analytics for this zone.', 'blt-secure' ),
+				array( 'status' => $status )
+			);
+		}
+
+		if ( ! empty( $decoded['errors'] ) ) {
+			$first   = (array) $decoded['errors'][0];
+			$message = isset( $first['message'] ) ? (string) $first['message'] : __( 'Cloudflare GraphQL error.', 'blt-secure' );
+			$code    = false !== stripos( $message, 'permission' ) || false !== stripos( $message, 'not authorized' ) ? 'blt_cf_scope' : 'blt_cf_error';
+			return new WP_Error( $code, $message, array( 'status' => $status ) );
+		}
+
+		return isset( $decoded['data'] ) && is_array( $decoded['data'] ) ? $decoded['data'] : array();
+	}
+
+	/**
 	 * Verify the token itself (needs no extra scopes).
 	 *
 	 * @return true|WP_Error

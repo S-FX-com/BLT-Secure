@@ -30,6 +30,10 @@ class Blt_Secure_Rule_Definitions {
 	const PHASE_CUSTOM    = 'http_request_firewall_custom';
 	const PHASE_RATELIMIT = 'http_ratelimit';
 
+	// Account IP List for synced threat-intel indicators. Names must be
+	// lowercase alphanumeric + underscore.
+	const IOC_LIST_NAME = 'blt_secure_iocs';
+
 	/**
 	 * Curated ASNs to challenge (cloud providers & bulletproof hosts that
 	 * legit browsers never originate from; challenged, not blocked, since
@@ -206,6 +210,25 @@ class Blt_Secure_Rule_Definitions {
 					'requests_per_period' => 5,
 					'mitigation_timeout'  => 600,
 				),
+				'enabled'     => true,
+			),
+		);
+	}
+
+	/**
+	 * Custom-phase rule that blocks any source IP present in the synced IOC
+	 * list. The list is referenced by name ($blt_secure_iocs); one rule
+	 * covers the whole list, so it scales to thousands of indicators.
+	 *
+	 * @return array[] Rule payloads keyed by ref suffix.
+	 */
+	public static function ioc_block_rules() {
+		return array(
+			'block' => array(
+				'ref'         => 'blt-secure-ioc-block',
+				'description' => '[BLT Secure] Block IPs from synced threat-intel feeds',
+				'expression'  => '(ip.src in $' . self::IOC_LIST_NAME . ')',
+				'action'      => 'block',
 				'enabled'     => true,
 			),
 		);

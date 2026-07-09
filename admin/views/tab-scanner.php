@@ -2,8 +2,9 @@
 /**
  * Scanner tab: core file integrity + malware signature results.
  *
- * @var Blt_Secure_Scanner|null $scanner Core scanner module (null if disabled).
- * @var Blt_Secure_Malware|null $malware Malware module (null if disabled).
+ * @var Blt_Secure_Scanner|null  $scanner  Core scanner module (null if disabled).
+ * @var Blt_Secure_Malware|null  $malware  Malware module (null if disabled).
+ * @var Blt_Secure_Baseline|null $baseline Baseline module (null if disabled).
  *
  * @package Blt_Secure
  */
@@ -188,6 +189,83 @@ $blt_secure_sev_class = array(
 			<?php endif; ?>
 		<?php elseif ( $blt_secure_mw && empty( $blt_secure_mw['error'] ) ) : ?>
 			<div class="notice notice-success inline"><p><?php esc_html_e( 'No files in wp-content matched the malware signatures.', 'blt-secure' ); ?></p></div>
+		<?php endif; ?>
+
+	<?php endif; ?>
+
+	<hr style="margin:32px 0;" />
+
+	<h2 class="blt-hc-cat"><?php esc_html_e( 'Plugin & theme integrity', 'blt-secure' ); ?></h2>
+	<p class="description">
+		<?php esc_html_e( 'Records a hash baseline of each installed plugin and theme and flags files that change without a version update — a sign of tampering. A normal update re-baselines automatically. Runs automatically once a week.', 'blt-secure' ); ?>
+	</p>
+
+	<?php if ( null === $baseline ) : ?>
+		<div class="notice notice-warning inline"><p><?php esc_html_e( 'The baseline monitor is disabled.', 'blt-secure' ); ?></p></div>
+	<?php else : ?>
+		<?php $blt_secure_bl = $baseline->latest(); ?>
+
+		<?php if ( $blt_secure_bl ) : ?>
+			<?php
+			$blt_secure_bl_count = isset( $blt_secure_bl['findings'] ) ? count( $blt_secure_bl['findings'] ) : 0;
+			$blt_secure_bl_clean = ( 0 === $blt_secure_bl_count );
+			?>
+			<div class="blt-hc-scoreboard">
+				<div class="blt-hc-score <?php echo $blt_secure_bl_clean ? 'blt-hc-score-good' : 'blt-hc-score-bad'; ?>">
+					<span class="blt-hc-score-num"><?php echo $blt_secure_bl_clean ? '✓' : esc_html( $blt_secure_bl_count ); ?></span>
+					<span class="blt-hc-score-label"><?php echo $blt_secure_bl_clean ? esc_html__( 'Unchanged', 'blt-secure' ) : esc_html__( 'Changed', 'blt-secure' ); ?></span>
+				</div>
+				<ul class="blt-hc-tallies">
+					<li><strong><?php echo esc_html( isset( $blt_secure_bl['targets'] ) ? (int) $blt_secure_bl['targets'] : 0 ); ?></strong> <?php esc_html_e( 'Extensions tracked', 'blt-secure' ); ?></li>
+				</ul>
+			</div>
+			<p class="blt-hc-meta">
+				<?php
+				printf(
+					/* translators: %s: human-readable time difference */
+					esc_html__( 'Last checked %s ago.', 'blt-secure' ),
+					esc_html( human_time_diff( (int) $blt_secure_bl['time'], time() ) )
+				);
+				?>
+			</p>
+		<?php else : ?>
+			<div class="blt-hc-scoreboard blt-hc-empty">
+				<p><?php esc_html_e( 'No baseline check has run yet. The first run records the baseline.', 'blt-secure' ); ?></p>
+			</div>
+		<?php endif; ?>
+
+		<p>
+			<button type="button" class="button button-primary" id="blt-bl-run"><?php esc_html_e( 'Check integrity now', 'blt-secure' ); ?></button>
+			<span id="blt-bl-status" class="blt-card-message"></span>
+		</p>
+
+		<?php if ( $blt_secure_bl && ! empty( $blt_secure_bl['findings'] ) ) : ?>
+			<ul class="blt-hc-list">
+				<?php foreach ( $blt_secure_bl['findings'] as $blt_secure_bf ) : ?>
+					<li class="blt-hc-item blt-hc-fail">
+						<span class="blt-hc-icon" aria-hidden="true">!</span>
+						<span class="blt-hc-body">
+							<span class="blt-hc-title"><?php echo esc_html( isset( $blt_secure_bf['label'] ) ? $blt_secure_bf['label'] : $blt_secure_bf['key'] ); ?></span>
+							<span class="blt-hc-msg">
+								<?php
+								printf(
+									/* translators: 1: modified count, 2: added count, 3: removed count */
+									esc_html__( '%1$d modified, %2$d added, %3$d removed at the same version', 'blt-secure' ),
+									(int) $blt_secure_bf['modified'],
+									(int) $blt_secure_bf['added'],
+									(int) $blt_secure_bf['removed']
+								);
+								?>
+							</span>
+							<?php if ( ! empty( $blt_secure_bf['files'] ) ) : ?>
+								<span class="blt-hc-details"><code><?php echo esc_html( implode( ', ', $blt_secure_bf['files'] ) ); ?></code></span>
+							<?php endif; ?>
+						</span>
+					</li>
+				<?php endforeach; ?>
+			</ul>
+		<?php elseif ( $blt_secure_bl ) : ?>
+			<div class="notice notice-success inline"><p><?php esc_html_e( 'Every tracked plugin and theme matches its baseline.', 'blt-secure' ); ?></p></div>
 		<?php endif; ?>
 
 	<?php endif; ?>

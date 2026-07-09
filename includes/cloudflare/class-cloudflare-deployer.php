@@ -155,6 +155,115 @@ class Blt_Secure_Cloudflare_Deployer {
 		foreach ( self::FEATURES as $feature ) {
 			$this->remove( $feature );
 		}
+		$this->remove_ioc_list();
+	}
+
+	// -------------------------------------------------------------------
+	// IOC blocklist (account IP List + one referencing custom rule).
+	// -------------------------------------------------------------------
+
+	/**
+	 * Push a set of IP/CIDR indicators to the account IP List and ensure the
+	 * custom-phase rule that blocks them exists. Idempotent: the list is
+	 * reused by name and the rule reconciled by ref.
+	 *
+	 * @param string[] $ips Validated IP/CIDR strings.
+	 * @return array|WP_Error Deployment record (list_id, rule_ids, count).
+	 */
+	public function sync_ioc_list( array $ips ) {
+		$zone = $this->state->zone();
+		if ( empty( $zone['zone_id'] ) || empty( $zone['account_id'] ) ) {
+			return new WP_Error( 'blt_cf_not_connected', __( 'Cloudflare is not connected yet — verify your token first.', 'blt-secure' ) );
+		}
+
+		$list = $this->find_or_create_ioc_list( $zone['account_id'] );
+		if ( is_wp_error( $list ) ) {
+			return $list;
+		}
+		$list_id = isset( $list['id'] ) ? $list['id'] : '';
+		if ( '' === $list_id ) {
+			return new WP_Error( 'blt_cf_validation', __( 'Cloudflare did not return an IP List id.', 'blt-secure' ) );
+		}
+
+		// Bulk-replace the list contents (Cloudflare expects [{ip:…}, …]).
+		$items = array();
+		foreach ( $ips as $ip ) {
+			$items[] = array( 'ip' => $ip );
+		}
+		$replaced = $this->api->put( '/accounts/' . $zone['account_id'] . '/rules/lists/' . $list_id . '/items', $items );
+		if ( is_wp_error( $replaced ) ) {
+			return $replaced;
+		}
+
+		// Ensure the referencing block rule (custom phase).
+		return $this->deploy_ruleset_feature(
+			$zone,
+			'ioc',
+			Blt_Secure_Rule_Definitions::PHASE_CUSTOM,
+			Blt_Secure_Rule_Definitions::ioc_block_rules(),
+			array(
+				'list_id' => $list_id,
+				'count'   => count( $ips ),
+			)
+		);
+	}
+
+	/**
+	 * Delete the IOC block rule and the account IP List. 404 = already gone.
+	 *
+	 * @return true|WP_Error
+	 */
+	public function remove_ioc_list() {
+		$zone   = $this->state->zone();
+		$record = $this->state->deployment( 'ioc' );
+		if ( null === $record ) {
+			return true;
+		}
+
+		// Rule must go first — a list cannot be deleted while referenced.
+		$removed = $this->remove_rules( $zone, $record );
+		if ( is_wp_error( $removed ) ) {
+			return $removed;
+		}
+
+		if ( ! empty( $record['list_id'] ) && ! empty( $zone['account_id'] ) ) {
+			$deleted = $this->api->delete( '/accounts/' . $zone['account_id'] . '/rules/lists/' . $record['list_id'] );
+			if ( is_wp_error( $deleted ) && ! $this->is_not_found( $deleted ) ) {
+				return $deleted;
+			}
+		}
+
+		$this->state->clear_deployment( 'ioc' );
+		return true;
+	}
+
+	/**
+	 * Adopt the account IP List by name, or create it.
+	 *
+	 * @param string $account_id Account id.
+	 * @return array|WP_Error List object.
+	 */
+	private function find_or_create_ioc_list( $account_id ) {
+		$lists = $this->api->get( '/accounts/' . $account_id . '/rules/lists' );
+		if ( ! is_wp_error( $lists ) ) {
+			foreach ( $lists as $list ) {
+				if ( isset( $list['name'], $list['id'] ) && Blt_Secure_Rule_Definitions::IOC_LIST_NAME === $list['name'] ) {
+					return $list;
+				}
+			}
+		} elseif ( in_array( $lists->get_error_code(), array( 'blt_cf_auth', 'blt_cf_scope' ), true ) ) {
+			// Missing Account Filter Lists permission must surface, not create.
+			return $lists;
+		}
+
+		return $this->api->post(
+			'/accounts/' . $account_id . '/rules/lists',
+			array(
+				'name'        => Blt_Secure_Rule_Definitions::IOC_LIST_NAME,
+				'kind'        => 'ip',
+				'description' => '[BLT Secure] Synced threat-intel indicators',
+			)
+		);
 	}
 
 	// -------------------------------------------------------------------

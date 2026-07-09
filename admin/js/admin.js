@@ -175,6 +175,72 @@
 		} );
 	}
 
+	// IOC feed sync (Advanced tab).
+	var iocRunBtn = document.getElementById( 'blt-ioc-run' );
+	if ( iocRunBtn ) {
+		iocRunBtn.addEventListener( 'click', function () {
+			var status = document.getElementById( 'blt-ioc-status' );
+			iocRunBtn.disabled = true;
+			setMessage( status, cfg.i18n.iocSync, false );
+
+			post( 'blt_secure_ioc_sync_run', {} ).then( function ( json ) {
+				if ( json.success ) {
+					window.location.reload();
+				} else {
+					iocRunBtn.disabled = false;
+					setMessage( status, ( json.data && json.data.message ) || cfg.i18n.scanError, true );
+				}
+			} ).catch( function () {
+				iocRunBtn.disabled = false;
+				setMessage( status, cfg.i18n.scanError, true );
+			} );
+		} );
+	}
+
+	// Timeline: poll Cloudflare, then reload to render the merged view.
+	var tlRunBtn = document.getElementById( 'blt-tl-run' );
+	if ( tlRunBtn ) {
+		tlRunBtn.addEventListener( 'click', function () {
+			var status = document.getElementById( 'blt-tl-status' );
+			tlRunBtn.disabled = true;
+			setMessage( status, cfg.i18n.polling, false );
+
+			post( 'blt_secure_timeline_poll_run', {} ).then( function ( json ) {
+				if ( json.success ) {
+					window.location.reload();
+				} else {
+					tlRunBtn.disabled = false;
+					setMessage( status, ( json.data && json.data.message ) || cfg.i18n.scanError, true );
+				}
+			} ).catch( function () {
+				tlRunBtn.disabled = false;
+				setMessage( status, cfg.i18n.scanError, true );
+			} );
+		} );
+	}
+
+	// Baseline integrity check.
+	var blRunBtn = document.getElementById( 'blt-bl-run' );
+	if ( blRunBtn ) {
+		blRunBtn.addEventListener( 'click', function () {
+			var status = document.getElementById( 'blt-bl-status' );
+			blRunBtn.disabled = true;
+			setMessage( status, cfg.i18n.baseScan, false );
+
+			post( 'blt_secure_baseline_scan_run', {} ).then( function ( json ) {
+				if ( json.success ) {
+					window.location.reload();
+				} else {
+					blRunBtn.disabled = false;
+					setMessage( status, ( json.data && json.data.message ) || cfg.i18n.scanError, true );
+				}
+			} ).catch( function () {
+				blRunBtn.disabled = false;
+				setMessage( status, cfg.i18n.scanError, true );
+			} );
+		} );
+	}
+
 	// Deploy / remove cards.
 	document.querySelectorAll( '.blt-card' ).forEach( function ( card ) {
 		var feature = card.getAttribute( 'data-feature' );
