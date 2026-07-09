@@ -386,6 +386,8 @@ $blt_test_requires = array(
 	'includes/health/class-health-checks.php',
 	'includes/scanner/class-core-scanner.php',
 	'includes/scanner/class-malware-scanner.php',
+	'includes/scanner/class-baseline-scanner.php',
+	'includes/scanner/class-yara.php',
 	'includes/cloudflare/rule-definitions.php',
 	'includes/cloudflare/class-cf-events.php',
 	'includes/cloudflare/class-cloudflare-api.php',

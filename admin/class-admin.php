@@ -179,6 +179,7 @@ class Blt_Secure_Admin {
 					'malScan'   => __( 'Scanning wp-content for malware…', 'blt-secure' ),
 					'iocSync'   => __( 'Syncing threat-intel feeds…', 'blt-secure' ),
 					'polling'   => __( 'Polling Cloudflare…', 'blt-secure' ),
+					'baseScan'  => __( 'Checking plugin/theme integrity…', 'blt-secure' ),
 				),
 			)
 		);
@@ -274,6 +275,7 @@ class Blt_Secure_Admin {
 		$health   = isset( $this->plugin->modules['health'] ) ? $this->plugin->modules['health'] : null;
 		$scanner  = isset( $this->plugin->modules['scanner'] ) ? $this->plugin->modules['scanner'] : null;
 		$malware  = isset( $this->plugin->modules['malware'] ) ? $this->plugin->modules['malware'] : null;
+		$baseline = isset( $this->plugin->modules['baseline'] ) ? $this->plugin->modules['baseline'] : null;
 		$ioc      = isset( $this->plugin->modules['ioc'] ) ? $this->plugin->modules['ioc'] : null;
 		$timeline = isset( $this->plugin->modules['timeline'] ) ? $this->plugin->modules['timeline'] : null;
 
