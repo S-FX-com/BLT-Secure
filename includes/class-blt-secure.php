@@ -91,6 +91,8 @@ final class Blt_Secure {
 
 		$modules = array(
 			$alerting,
+			new Blt_Secure_Activity( $this->options, $alerting ),
+			new Blt_Secure_Upload_Guard( $this->options, $alerting ),
 			new Blt_Secure_Headers( $this->options ),
 			new Blt_Secure_Privacy( $this->options ),
 			new Blt_Secure_Xmlrpc( $this->options ),
@@ -98,6 +100,8 @@ final class Blt_Secure {
 			new Blt_Secure_Login_Hardening( $this->options, $this->ip_resolver, $alerting ),
 			new Blt_Secure_Two_Factor( $this->options, new Blt_Secure_Crypto(), $alerting ),
 			new Blt_Secure_Health( $this->options ),
+			new Blt_Secure_Scanner( $this->options, $alerting ),
+			new Blt_Secure_Malware( $this->options, $alerting ),
 		);
 
 		/**
@@ -172,6 +176,12 @@ final class Blt_Secure {
 		if ( ! wp_next_scheduled( Blt_Secure_Health::CRON_HOOK ) ) {
 			wp_schedule_event( time() + HOUR_IN_SECONDS, 'daily', Blt_Secure_Health::CRON_HOOK );
 		}
+		if ( ! wp_next_scheduled( Blt_Secure_Scanner::CRON_HOOK ) ) {
+			wp_schedule_event( time() + ( 2 * HOUR_IN_SECONDS ), 'daily', Blt_Secure_Scanner::CRON_HOOK );
+		}
+		if ( ! wp_next_scheduled( Blt_Secure_Malware::CRON_HOOK ) ) {
+			wp_schedule_event( time() + ( 3 * HOUR_IN_SECONDS ), 'weekly', Blt_Secure_Malware::CRON_HOOK );
+		}
 		flush_rewrite_rules();
 	}
 
@@ -184,6 +194,8 @@ final class Blt_Secure {
 	public static function deactivate() {
 		wp_clear_scheduled_hook( 'blt_secure_refresh_cf_ips' );
 		wp_clear_scheduled_hook( Blt_Secure_Health::CRON_HOOK );
+		wp_clear_scheduled_hook( Blt_Secure_Scanner::CRON_HOOK );
+		wp_clear_scheduled_hook( Blt_Secure_Malware::CRON_HOOK );
 		flush_rewrite_rules();
 	}
 }
