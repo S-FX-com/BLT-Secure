@@ -196,6 +196,32 @@ $blt_secure_events   = is_array( $blt_secure_events ) ? array_slice( array_rever
 				<button type="button" class="button" id="blt-ioc-run"><?php esc_html_e( 'Sync now', 'blt-secure' ); ?></button>
 				<span id="blt-ioc-status" class="blt-card-message"></span>
 			</p>
+			<?php
+			$blt_secure_changelog = ( new Blt_Secure_Feed_Changelog() )->entries( 10 );
+			if ( ! empty( $blt_secure_changelog ) ) :
+				?>
+				<p class="blt-setting-title" style="margin-top:16px;"><?php esc_html_e( 'Recent feed changes', 'blt-secure' ); ?></p>
+				<ul class="blt-hc-list">
+					<?php foreach ( $blt_secure_changelog as $blt_secure_cl ) : ?>
+						<li class="blt-hc-item blt-hc-skip">
+							<span class="blt-hc-body">
+								<span class="blt-hc-title"><?php echo esc_html( wp_date( 'Y-m-d H:i', (int) $blt_secure_cl['time'] ) ); ?></span>
+								<span class="blt-hc-msg">
+									<?php
+									printf(
+										/* translators: 1: total, 2: added, 3: removed */
+										esc_html__( '%1$d indicators (+%2$d / −%3$d since last refresh)', 'blt-secure' ),
+										(int) $blt_secure_cl['total'],
+										(int) $blt_secure_cl['added'],
+										(int) $blt_secure_cl['removed']
+									);
+									?>
+								</span>
+							</span>
+						</li>
+					<?php endforeach; ?>
+				</ul>
+			<?php endif; ?>
 		</div>
 	</div>
 </div>

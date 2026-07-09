@@ -33,6 +33,7 @@ require_once BLT_SECURE_DIR . 'includes/crypto/interface-credential-store.php';
 require_once BLT_SECURE_DIR . 'includes/crypto/class-encrypted-option-store.php';
 require_once BLT_SECURE_DIR . 'includes/feeds/class-feeds.php';
 require_once BLT_SECURE_DIR . 'includes/feeds/class-ioc-parser.php';
+require_once BLT_SECURE_DIR . 'includes/feeds/class-feed-changelog.php';
 require_once BLT_SECURE_DIR . 'includes/modules/class-alerting.php';
 require_once BLT_SECURE_DIR . 'includes/modules/class-alert-channels.php';
 require_once BLT_SECURE_DIR . 'includes/modules/class-activity.php';

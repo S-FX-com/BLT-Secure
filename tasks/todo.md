@@ -83,7 +83,8 @@
 
 - [x] **Slack/email alerting channels** — `Blt_Secure_Alert_Channels` subscribes to the `blt_secure_alert` action and forwards high-signal events to email (`wp_mail`) and Slack (incoming webhook).
   - AC: notify allowlist defaults to high-signal types (lockout, blocked plugin/upload, malware/core/baseline findings, admin-granted), filterable via `blt_secure_alert_notify_types`; per-type throttle (default 900s, filterable via `blt_secure_alert_throttle`) prevents floods; email recipient falls back to `admin_email`; Slack webhook stored encrypted via the credential store, verified with a test post on save, managed on the Advanced tab; pure helpers (`should_notify`, `format`, `slack_payload`, `type_label`) unit-tested; no-ops when both channels are off.
-- [ ] Scheduled feed updates w/ changelog (auto-refresh feeds.json-driven sources; the IOC sync already runs daily — this adds change tracking/notification)
+- [x] **Feed changelog** — tracks what each threat-feed refresh changed.
+  - AC: `Blt_Secure_Feed_Changelog` diffs the current indicator set against the previous snapshot on every IOC sync, appends a rolling changelog entry (total + added/removed counts + samples, capped at 30 entries), and stores the new snapshot; fires an informational `feed_updated` event (not in the default notify allowlist, so it logs without emailing) when the set changes; recent changes shown on the Advanced tab under the threat-intel section; pure `diff_sets`/`build_entry` unit-tested, persistence round-trip tested.
 - [ ] Client-facing status page / trust badge
 - [ ] Central dashboard (CF Workers + D1) — hosted component; needs infra decisions (hosting, auth, per-site enrollment)
 - [ ] Worker/KV credential store backend (swap for Blt_Secure_Encrypted_Option_Store) — depends on the hosted dashboard

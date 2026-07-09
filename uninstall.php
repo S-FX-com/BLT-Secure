@@ -59,6 +59,8 @@ if ( ! empty( $blt_secure_advanced['delete_data_on_uninstall'] ) ) {
 	delete_option( 'blt_secure_core_scan_results' );
 	delete_option( 'blt_secure_malware_results' );
 	delete_option( 'blt_secure_ioc_state' );
+	delete_option( 'blt_secure_feed_changelog' );
+	delete_option( 'blt_secure_feed_snapshot' );
 	delete_option( 'blt_secure_cf_events' );
 	delete_option( 'blt_secure_baseline_results' );
 	delete_option( 'blt_secure_baselines' );
