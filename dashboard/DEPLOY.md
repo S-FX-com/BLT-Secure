@@ -56,14 +56,18 @@ fleet reporting, save, then "Send report now".
 | --- | --- | --- | --- |
 | POST | `/v1/snapshot` | site token + HMAC | ingest a posture snapshot |
 | GET | `/v1/commands` | site token + HMAC | pull queued remote commands |
+| POST | `/v1/commands/ack` | site token + HMAC | acknowledge executed commands (→ `done`) |
 | GET | `/` | Cloudflare Access | operator dashboard |
 | POST | `/admin/sites` | Cloudflare Access | enroll a site (one-time token) |
 | POST | `/admin/commands` | Cloudflare Access | queue a command for a site |
 
 ## Notes / next steps
 - Only `sha256(token)` is stored; the raw token lives only on the client site.
-- The remote-command **receiver** in the plugin (pull `/v1/commands` on cron
-  and execute) is the next plugin-side step; the endpoint + `commands` table
-  are ready for it.
+- The plugin's remote-command **receiver** pulls `/v1/commands` hourly (opt-in
+  via Advanced → "Accept remote commands"), executes only a fixed whitelist of
+  scan/sync actions, then POSTs `/v1/commands/ack` to close them. Queue work
+  with `POST /admin/commands` (`{ site_id, command }`) where `command` is one
+  of `scan_core`, `scan_malware`, `scan_baseline`, `sync_ioc`, `health_scan`,
+  `report`.
 - Snapshots are validated + field-whitelisted (`src/snapshot.js`) before they
   touch D1.

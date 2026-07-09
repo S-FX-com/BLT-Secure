@@ -308,6 +308,30 @@ if ( ! function_exists( 'wp_remote_retrieve_body' ) ) {
 	}
 }
 
+if ( ! function_exists( 'esc_html' ) ) {
+	/**
+	 * WP shim.
+	 *
+	 * @param string $text Value.
+	 * @return string
+	 */
+	function esc_html( $text ) {
+		return htmlspecialchars( (string) $text, ENT_QUOTES, 'UTF-8' );
+	}
+}
+
+if ( ! function_exists( 'esc_attr' ) ) {
+	/**
+	 * WP shim.
+	 *
+	 * @param string $text Value.
+	 * @return string
+	 */
+	function esc_attr( $text ) {
+		return htmlspecialchars( (string) $text, ENT_QUOTES, 'UTF-8' );
+	}
+}
+
 if ( ! function_exists( 'sanitize_email' ) ) {
 	/**
 	 * WP shim.
@@ -378,6 +402,7 @@ $blt_test_requires = array(
 	'includes/modules/class-alerting.php',
 	'includes/modules/class-alert-channels.php',
 	'includes/modules/class-fleet.php',
+	'includes/modules/class-badge.php',
 	'includes/modules/class-activity.php',
 	'includes/modules/class-upload-guard.php',
 	'includes/modules/class-login-hardening.php',

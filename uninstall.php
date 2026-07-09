@@ -93,4 +93,5 @@ if ( ! empty( $blt_secure_advanced['delete_data_on_uninstall'] ) ) {
 	wp_clear_scheduled_hook( 'blt_secure_timeline_poll' );
 	wp_clear_scheduled_hook( 'blt_secure_baseline_scan' );
 	wp_clear_scheduled_hook( 'blt_secure_fleet_report' );
+	wp_clear_scheduled_hook( 'blt_secure_fleet_pull' );
 }

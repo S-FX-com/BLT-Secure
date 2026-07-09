@@ -99,6 +99,34 @@ $blt_secure_events   = is_array( $blt_secure_events ) ? array_slice( array_rever
 				<input type="url" name="<?php echo esc_attr( $blt_secure_opt ); ?>[fleet][endpoint]" value="<?php echo esc_attr( isset( $blt_secure_fleet['endpoint'] ) ? $blt_secure_fleet['endpoint'] : '' ); ?>" class="regular-text" placeholder="https://fleet.example.com" />
 			</div>
 		</div>
+		<?php
+		blt_secure_setting_open( __( 'Accept remote commands', 'blt-secure' ), __( 'Let the dashboard queue scans/syncs this site pulls and runs hourly. Only a fixed whitelist of scan/sync actions is ever executed — never arbitrary code.', 'blt-secure' ) );
+		blt_secure_setting_control();
+		blt_secure_toggle( $blt_secure_opt . '[fleet][commands]', ! empty( $blt_secure_fleet['commands'] ) );
+		blt_secure_setting_close();
+		?>
+	</div>
+
+	<?php $blt_secure_badge = $options->section( 'badge' ); ?>
+	<div class="blt-section">
+		<h2><?php esc_html_e( 'Trust badge', 'blt-secure' ); ?></h2>
+		<p class="blt-section-desc"><?php esc_html_e( 'Show a "Protected by BLT Secure" badge on your site. It discloses nothing about your security posture — just a padlock and a label.', 'blt-secure' ); ?></p>
+		<?php
+		blt_secure_setting_open( __( 'Enable the trust badge', 'blt-secure' ), __( 'Registers the [blt_secure_badge] shortcode. Place it in a widget, footer, or page.', 'blt-secure' ) );
+		blt_secure_setting_control();
+		blt_secure_toggle( $blt_secure_opt . '[badge][enabled]', ! empty( $blt_secure_badge['enabled'] ) );
+		blt_secure_setting_close();
+		?>
+		<?php if ( ! empty( $blt_secure_badge['enabled'] ) ) : ?>
+			<div class="blt-setting">
+				<div class="blt-setting-info">
+					<div class="blt-setting-title"><?php esc_html_e( 'Shortcode', 'blt-secure' ); ?></div>
+					<p class="blt-setting-desc"><?php esc_html_e( 'Paste this where you want the badge. Optional attributes: style="dark" and a custom label.', 'blt-secure' ); ?></p>
+					<p><code>[blt_secure_badge]</code></p>
+					<p><?php echo wp_kses_post( Blt_Secure_Badge::render( __( 'Protected by BLT Secure', 'blt-secure' ) ) ); ?></p>
+				</div>
+			</div>
+		<?php endif; ?>
 	</div>
 
 	<?php submit_button(); ?>
