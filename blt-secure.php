@@ -32,6 +32,7 @@ require_once BLT_SECURE_DIR . 'includes/crypto/class-crypto.php';
 require_once BLT_SECURE_DIR . 'includes/crypto/interface-credential-store.php';
 require_once BLT_SECURE_DIR . 'includes/crypto/class-encrypted-option-store.php';
 require_once BLT_SECURE_DIR . 'includes/modules/class-alerting.php';
+require_once BLT_SECURE_DIR . 'includes/modules/class-activity.php';
 require_once BLT_SECURE_DIR . 'includes/modules/class-headers.php';
 require_once BLT_SECURE_DIR . 'includes/modules/class-privacy.php';
 require_once BLT_SECURE_DIR . 'includes/modules/class-xmlrpc.php';

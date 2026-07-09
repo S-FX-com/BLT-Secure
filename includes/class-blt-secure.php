@@ -91,6 +91,7 @@ final class Blt_Secure {
 
 		$modules = array(
 			$alerting,
+			new Blt_Secure_Activity( $this->options, $alerting ),
 			new Blt_Secure_Headers( $this->options ),
 			new Blt_Secure_Privacy( $this->options ),
 			new Blt_Secure_Xmlrpc( $this->options ),

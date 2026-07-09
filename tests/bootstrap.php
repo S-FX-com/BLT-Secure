@@ -373,6 +373,7 @@ $blt_test_requires = array(
 	'includes/crypto/class-encrypted-option-store.php',
 	'includes/modules/class-totp.php',
 	'includes/modules/class-alerting.php',
+	'includes/modules/class-activity.php',
 	'includes/modules/class-login-hardening.php',
 	'includes/class-ip-resolver.php',
 	'includes/class-updater.php',

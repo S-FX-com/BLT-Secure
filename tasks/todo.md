@@ -52,6 +52,7 @@
 - [ ] Settings restyle: on Hardening/Login/Advanced, toggles flip and save correctly (each section saves without wiping another); the read-only `DISALLOW_FILE_EDIT` toggle is disabled but reflects the constant; selects/number fields still persist; keyboard focus ring shows on toggles.
 - [ ] Core scanner: open the Scanner tab → "Scan core files now" → verified-count/version render and the flagged-files list appears if any core file is modified/missing (temporarily edit a core file to confirm it is caught, then restore); confirm the `core_integrity` check appears under Files & Permissions on the Health Check tab; confirm the daily `blt_secure_core_scan` cron event is scheduled.
 - [ ] Malware scanner: drop a harmless test file containing `eval(base64_decode($_POST['x']));` into wp-content/uploads → "Scan for malware now" → it is flagged (plus the executable-PHP-in-uploads finding); confirm a normal site scans clean with no false positives; confirm the `malware_scan` check appears on the Health Check tab and the weekly `blt_secure_malware_scan` cron is scheduled; delete the test file afterwards.
+- [ ] Activity log: create a test admin user → confirm an `activity_admin_granted` event appears on the Advanced tab; activate a plugin and switch theme → confirm those are logged with the acting user; change the site URL → confirm `activity_option_changed`; confirm front-end requests do not record transient option writes.
 - [ ] Release workflow dry run: temporarily add a `test/release-dry-run` branch trigger with `draft: true` on the release step, push, download + unzip-verify the draft asset, then remove the test trigger. (workflow_dispatch only appears once the workflow file is on main.)
 
 ## Phase 2 — Detection & Monitoring (in progress)
@@ -66,7 +67,8 @@
 - [ ] YARA engine acceleration when ext-yara is present (optional, layered behind the same scanner interface).
 - [ ] IOC blocklist sync (ThreatFox, Spamhaus DROP) → push to CF IP List / custom rule
 - [ ] CF firewall event ingestion → unified timeline
-- [ ] Suspicious wp-admin activity log (new admins, plugin installs, cron changes)
+- [x] **Suspicious wp-admin activity log** — records high-signal backend changes as security events.
+  - AC: `Blt_Secure_Activity` module hooks admin-grant (`set_user_role`), user deletion, plugin activate/deactivate, theme switch, plugin/theme/core install-or-update (`upgrader_process_complete`), and changes to watched options (siteurl/home/admin_email/users_can_register/default_role/template/stylesheet); each event is attributed to the acting user and forwarded to `Blt_Secure_Alerting::notify()` (shown on the Advanced tab, available to Phase 3 channels via `blt_secure_alert`); the high-frequency `updated_option` listener is admin-only so front-end transient writes are never observed; pure helpers (`is_admin_grant`, `is_watched_option`) unit-tested.
 - [ ] Malicious upload detection (CF signal + local pass on /uploads)
 - [ ] Wire feeds/feeds.json loader (pluggable feed sources)
 
