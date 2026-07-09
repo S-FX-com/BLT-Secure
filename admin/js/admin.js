@@ -197,6 +197,28 @@
 		} );
 	}
 
+	// Timeline: poll Cloudflare, then reload to render the merged view.
+	var tlRunBtn = document.getElementById( 'blt-tl-run' );
+	if ( tlRunBtn ) {
+		tlRunBtn.addEventListener( 'click', function () {
+			var status = document.getElementById( 'blt-tl-status' );
+			tlRunBtn.disabled = true;
+			setMessage( status, cfg.i18n.polling, false );
+
+			post( 'blt_secure_timeline_poll_run', {} ).then( function ( json ) {
+				if ( json.success ) {
+					window.location.reload();
+				} else {
+					tlRunBtn.disabled = false;
+					setMessage( status, ( json.data && json.data.message ) || cfg.i18n.scanError, true );
+				}
+			} ).catch( function () {
+				tlRunBtn.disabled = false;
+				setMessage( status, cfg.i18n.scanError, true );
+			} );
+		} );
+	}
+
 	// Deploy / remove cards.
 	document.querySelectorAll( '.blt-card' ).forEach( function ( card ) {
 		var feature = card.getAttribute( 'data-feature' );

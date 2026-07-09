@@ -387,6 +387,7 @@ $blt_test_requires = array(
 	'includes/scanner/class-core-scanner.php',
 	'includes/scanner/class-malware-scanner.php',
 	'includes/cloudflare/rule-definitions.php',
+	'includes/cloudflare/class-cf-events.php',
 	'includes/cloudflare/class-cloudflare-api.php',
 	'includes/cloudflare/class-cloudflare-state.php',
 	'includes/cloudflare/class-cloudflare-deployer.php',
