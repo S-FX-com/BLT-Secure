@@ -69,8 +69,8 @@
 - [ ] CF firewall event ingestion → unified timeline
 - [x] **Suspicious wp-admin activity log** — records high-signal backend changes as security events.
   - AC: `Blt_Secure_Activity` module hooks admin-grant (`set_user_role`), user deletion, plugin activate/deactivate, theme switch, plugin/theme/core install-or-update (`upgrader_process_complete`), and changes to watched options (siteurl/home/admin_email/users_can_register/default_role/template/stylesheet); each event is attributed to the acting user and forwarded to `Blt_Secure_Alerting::notify()` (shown on the Advanced tab, available to Phase 3 channels via `blt_secure_alert`); the high-frequency `updated_option` listener is admin-only so front-end transient writes are never observed; pure helpers (`is_admin_grant`, `is_watched_option`) unit-tested.
-- [ ] Malicious upload detection (CF signal + local pass on /uploads)
-- [ ] Wire feeds/feeds.json loader (pluggable feed sources)
+- [x] **Malicious upload detection (local)** — `Blt_Secure_Upload_Guard` rejects uploads at `wp_handle_upload_prefilter` that are PHP by extension (including double-extension `.php.jpg`) or carry a PHP open tag anywhere in the first 8 MB (disguised polyglot); FP-safe (no signature scan of binary media); blocked uploads raise a `blocked_upload` alert. Pure helpers (`dangerous_extension`, `has_php_open_tag`, `danger_reason`) unit-tested. *(CF-signal side remains under the Cloudflare track.)*
+- [x] **feeds/feeds.json loader** — `Blt_Secure_Feeds` parses/validates the feed catalogue into normalized, filterable descriptors (`all`/`enabled`/`by_format`/`get`), rejecting entries with a bad id, non-http(s) url, or unsupported format; extendable via the `blt_secure_feeds` filter; no network I/O (consumers fetch). Pure helpers (`valid_format`, `normalize_feed`) unit-tested. Foundation for the YARA-signature and IOC consumers below.
 
 ## Phase 3 — Fleet Management (not started)
 
