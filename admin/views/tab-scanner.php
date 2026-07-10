@@ -108,7 +108,7 @@ $blt_secure_sev_class = array(
 
 	<h2 class="blt-hc-cat"><?php esc_html_e( 'Malware scan', 'blt-secure' ); ?></h2>
 	<p class="description">
-		<?php esc_html_e( 'Scans wp-content (uploads, plugins, themes, mu-plugins) for known malware and webshell signatures. Signature matches are occasionally false positives — inspect each flagged file before acting. Runs automatically once a week.', 'blt-secure' ); ?>
+		<?php esc_html_e( 'Scans wp-content (uploads, plugins, themes, mu-plugins) for known malware and webshell signatures, and specifically flags any executable or script file (PHP, HTML, JS, SVG, server scripts, config overrides) found in the uploads directory — where only media and documents belong. Signature matches are occasionally false positives — inspect each flagged file before acting. Runs automatically once a week.', 'blt-secure' ); ?>
 	</p>
 
 	<?php if ( null === $malware ) : ?>
