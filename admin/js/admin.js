@@ -327,6 +327,49 @@
 		} );
 	}
 
+	// Whitelist: ignore / restore scanner findings (event-delegated so it
+	// works for every finding row across all three scanner sections).
+	document.addEventListener( 'click', function ( event ) {
+		var ignoreBtn = event.target.closest ? event.target.closest( '.blt-wl-ignore' ) : null;
+		if ( ignoreBtn ) {
+			event.preventDefault();
+			var item = ignoreBtn.closest( 'li' );
+			ignoreBtn.disabled = true;
+			post( 'blt_secure_whitelist_add', {
+				fingerprint: ignoreBtn.getAttribute( 'data-fp' ),
+				scanner: ignoreBtn.getAttribute( 'data-scanner' ) || '',
+				label: ignoreBtn.getAttribute( 'data-label' ) || ''
+			} ).then( function ( json ) {
+				if ( json.success && item ) {
+					item.parentNode.removeChild( item );
+				} else {
+					ignoreBtn.disabled = false;
+				}
+			} ).catch( function () {
+				ignoreBtn.disabled = false;
+			} );
+			return;
+		}
+
+		var restoreBtn = event.target.closest ? event.target.closest( '.blt-wl-restore' ) : null;
+		if ( restoreBtn ) {
+			event.preventDefault();
+			var row = restoreBtn.closest( 'li' );
+			restoreBtn.disabled = true;
+			post( 'blt_secure_whitelist_remove', {
+				fingerprint: restoreBtn.getAttribute( 'data-fp' )
+			} ).then( function ( json ) {
+				if ( json.success && row ) {
+					row.parentNode.removeChild( row );
+				} else {
+					restoreBtn.disabled = false;
+				}
+			} ).catch( function () {
+				restoreBtn.disabled = false;
+			} );
+		}
+	} );
+
 	// Deploy / remove cards.
 	document.querySelectorAll( '.blt-card' ).forEach( function ( card ) {
 		var feature = card.getAttribute( 'data-feature' );

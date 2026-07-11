@@ -43,6 +43,13 @@ final class Blt_Secure {
 	public $credentials;
 
 	/**
+	 * Scanner finding whitelist ("ignore" list) shared across scanners.
+	 *
+	 * @var Blt_Secure_Scan_Whitelist
+	 */
+	public $whitelist;
+
+	/**
 	 * Registered modules, keyed by id.
 	 *
 	 * @var Blt_Secure_Module[]
@@ -86,6 +93,7 @@ final class Blt_Secure {
 		$this->options     = new Blt_Secure_Options();
 		$this->ip_resolver = new Blt_Secure_Ip_Resolver( $this->options );
 		$this->credentials = new Blt_Secure_Encrypted_Option_Store( new Blt_Secure_Crypto() );
+		$this->whitelist   = new Blt_Secure_Scan_Whitelist();
 
 		$alerting = new Blt_Secure_Alerting( $this->options );
 
@@ -101,9 +109,9 @@ final class Blt_Secure {
 			new Blt_Secure_Login_Hardening( $this->options, $this->ip_resolver, $alerting ),
 			new Blt_Secure_Two_Factor( $this->options, new Blt_Secure_Crypto(), $alerting ),
 			new Blt_Secure_Health( $this->options ),
-			new Blt_Secure_Scanner( $this->options, $alerting ),
-			new Blt_Secure_Malware( $this->options, $alerting ),
-			new Blt_Secure_Baseline( $this->options, $alerting ),
+			new Blt_Secure_Scanner( $this->options, $alerting, $this->whitelist ),
+			new Blt_Secure_Malware( $this->options, $alerting, $this->whitelist ),
+			new Blt_Secure_Baseline( $this->options, $alerting, $this->whitelist ),
 			new Blt_Secure_Ioc( $this->options, $this->credentials, $alerting ),
 			new Blt_Secure_Timeline( $this->options, $this->credentials, $alerting ),
 			new Blt_Secure_Fleet( $this->options, $this->credentials, $alerting ),

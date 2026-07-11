@@ -35,14 +35,32 @@ class Blt_Secure_Scanner implements Blt_Secure_Module {
 	private $alerting;
 
 	/**
+	 * Finding whitelist.
+	 *
+	 * @var Blt_Secure_Scan_Whitelist
+	 */
+	private $whitelist;
+
+	/**
 	 * Constructor.
 	 *
-	 * @param Blt_Secure_Options       $options  Settings access.
-	 * @param Blt_Secure_Alerting|null $alerting Alerting sink.
+	 * @param Blt_Secure_Options             $options   Settings access.
+	 * @param Blt_Secure_Alerting|null       $alerting  Alerting sink.
+	 * @param Blt_Secure_Scan_Whitelist|null $whitelist Finding whitelist.
 	 */
-	public function __construct( Blt_Secure_Options $options, $alerting = null ) {
-		$this->options  = $options;
-		$this->alerting = $alerting;
+	public function __construct( Blt_Secure_Options $options, $alerting = null, $whitelist = null ) {
+		$this->options   = $options;
+		$this->alerting  = $alerting;
+		$this->whitelist = $whitelist instanceof Blt_Secure_Scan_Whitelist ? $whitelist : new Blt_Secure_Scan_Whitelist();
+	}
+
+	/**
+	 * The shared finding whitelist.
+	 *
+	 * @return Blt_Secure_Scan_Whitelist
+	 */
+	public function whitelist() {
+		return $this->whitelist;
 	}
 
 	/**
@@ -131,11 +149,12 @@ class Blt_Secure_Scanner implements Blt_Secure_Module {
 
 		update_option( self::RESULTS_OPTION, $payload, false );
 
-		if ( $this->alerting && empty( $payload['error'] ) && ! empty( $payload['issues'] ) ) {
+		$active = empty( $payload['issues'] ) ? array() : $this->whitelist->active( $payload['issues'] );
+		if ( $this->alerting && empty( $payload['error'] ) && ! empty( $active ) ) {
 			$this->alerting->notify(
 				'core_integrity_issues',
 				array(
-					'count'   => count( $payload['issues'] ),
+					'count'   => count( $active ),
 					'version' => $payload['version'],
 				)
 			);
@@ -198,7 +217,7 @@ class Blt_Secure_Scanner implements Blt_Secure_Module {
 			);
 		}
 
-		$count = isset( $payload['issues'] ) ? count( $payload['issues'] ) : 0;
+		$count = isset( $payload['issues'] ) ? count( $this->whitelist->active( $payload['issues'] ) ) : 0;
 		if ( 0 === $count ) {
 			return array(
 				'status'  => Blt_Secure_Health_Result::PASS,

@@ -125,9 +125,12 @@ class Blt_Secure_Core_Scanner {
 				$truncated = true;
 				break;
 			}
+			$hash     = ( self::STATUS_MODIFIED === $status && is_string( $actual ) ) ? $actual : '';
 			$issues[] = array(
-				'path'   => $path,
-				'status' => $status,
+				'path'        => $path,
+				'status'      => $status,
+				'hash'        => $hash,
+				'fingerprint' => Blt_Secure_Scan_Whitelist::fingerprint( 'core', array( $status, $path, $hash ) ),
 			);
 		}
 
@@ -141,9 +144,14 @@ class Blt_Secure_Core_Scanner {
 					$truncated = true;
 					break;
 				}
+				$full     = ABSPATH . $path;
+				$md5      = is_readable( $full ) ? md5_file( $full ) : false;
+				$hash     = false === $md5 ? '' : (string) $md5;
 				$issues[] = array(
-					'path'   => $path,
-					'status' => self::STATUS_UNKNOWN,
+					'path'        => $path,
+					'status'      => self::STATUS_UNKNOWN,
+					'hash'        => $hash,
+					'fingerprint' => Blt_Secure_Scan_Whitelist::fingerprint( 'core', array( self::STATUS_UNKNOWN, $path, $hash ) ),
 				);
 			}
 		}

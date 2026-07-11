@@ -62,6 +62,8 @@ class Blt_Secure_Admin {
 		add_action( 'wp_ajax_blt_secure_fleet_save', array( $this, 'ajax_fleet_save' ) );
 		add_action( 'wp_ajax_blt_secure_fleet_delete', array( $this, 'ajax_fleet_delete' ) );
 		add_action( 'wp_ajax_blt_secure_fleet_report', array( $this, 'ajax_fleet_report' ) );
+		add_action( 'wp_ajax_blt_secure_whitelist_add', array( $this, 'ajax_whitelist_add' ) );
+		add_action( 'wp_ajax_blt_secure_whitelist_remove', array( $this, 'ajax_whitelist_remove' ) );
 		add_action( 'admin_notices', array( $this, 'update_token_notice' ) );
 	}
 
@@ -186,6 +188,8 @@ class Blt_Secure_Admin {
 					'polling'   => __( 'Polling Cloudflare…', 'blt-secure' ),
 					'baseScan'  => __( 'Checking plugin/theme integrity…', 'blt-secure' ),
 					'reporting' => __( 'Reporting to dashboard…', 'blt-secure' ),
+					'ignored'   => __( 'Ignored', 'blt-secure' ),
+					'restored'  => __( 'Restored', 'blt-secure' ),
 				),
 			)
 		);
@@ -274,16 +278,17 @@ class Blt_Secure_Admin {
 			$tab = 'hardening';
 		}
 
-		$options  = $this->plugin->options;
-		$cf_state = $this->cf_state;
-		$store    = $this->plugin->credentials;
-		$admin    = $this;
-		$health   = isset( $this->plugin->modules['health'] ) ? $this->plugin->modules['health'] : null;
-		$scanner  = isset( $this->plugin->modules['scanner'] ) ? $this->plugin->modules['scanner'] : null;
-		$malware  = isset( $this->plugin->modules['malware'] ) ? $this->plugin->modules['malware'] : null;
-		$baseline = isset( $this->plugin->modules['baseline'] ) ? $this->plugin->modules['baseline'] : null;
-		$ioc      = isset( $this->plugin->modules['ioc'] ) ? $this->plugin->modules['ioc'] : null;
-		$timeline = isset( $this->plugin->modules['timeline'] ) ? $this->plugin->modules['timeline'] : null;
+		$options   = $this->plugin->options;
+		$cf_state  = $this->cf_state;
+		$store     = $this->plugin->credentials;
+		$whitelist = $this->plugin->whitelist;
+		$admin     = $this;
+		$health    = isset( $this->plugin->modules['health'] ) ? $this->plugin->modules['health'] : null;
+		$scanner   = isset( $this->plugin->modules['scanner'] ) ? $this->plugin->modules['scanner'] : null;
+		$malware   = isset( $this->plugin->modules['malware'] ) ? $this->plugin->modules['malware'] : null;
+		$baseline  = isset( $this->plugin->modules['baseline'] ) ? $this->plugin->modules['baseline'] : null;
+		$ioc       = isset( $this->plugin->modules['ioc'] ) ? $this->plugin->modules['ioc'] : null;
+		$timeline  = isset( $this->plugin->modules['timeline'] ) ? $this->plugin->modules['timeline'] : null;
 
 		require BLT_SECURE_DIR . 'admin/views/settings-page.php';
 	}
@@ -636,6 +641,56 @@ class Blt_Secure_Admin {
 			? __( 'Set the dashboard endpoint (and enable + save) and store an enrollment token first.', 'blt-secure' )
 			: ( isset( $result['error'] ) ? $result['error'] : __( 'The report could not be sent.', 'blt-secure' ) );
 		wp_send_json_error( array( 'message' => $message ) );
+	}
+
+	/**
+	 * Whitelist ("ignore") a scanner finding by fingerprint.
+	 *
+	 * @return void
+	 */
+	public function ajax_whitelist_add() {
+		$this->guard();
+
+		// phpcs:disable WordPress.Security.NonceVerification.Missing -- guard() ran check_ajax_referer.
+		$fingerprint = isset( $_POST['fingerprint'] ) ? sanitize_text_field( wp_unslash( $_POST['fingerprint'] ) ) : '';
+		$scanner     = isset( $_POST['scanner'] ) ? sanitize_key( wp_unslash( $_POST['scanner'] ) ) : '';
+		$label       = isset( $_POST['label'] ) ? sanitize_text_field( wp_unslash( $_POST['label'] ) ) : '';
+		// phpcs:enable WordPress.Security.NonceVerification.Missing
+
+		if ( ! Blt_Secure_Scan_Whitelist::is_valid_fingerprint( $fingerprint ) ) {
+			wp_send_json_error( array( 'message' => __( 'Invalid finding reference.', 'blt-secure' ) ) );
+		}
+
+		$this->plugin->whitelist->add(
+			$fingerprint,
+			array(
+				'scanner' => $scanner,
+				'label'   => $label,
+				'time'    => time(),
+				'user'    => get_current_user_id(),
+			)
+		);
+
+		wp_send_json_success( array( 'message' => __( 'Finding ignored.', 'blt-secure' ) ) );
+	}
+
+	/**
+	 * Remove a finding from the whitelist (un-ignore it).
+	 *
+	 * @return void
+	 */
+	public function ajax_whitelist_remove() {
+		$this->guard();
+
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- guard() ran check_ajax_referer.
+		$fingerprint = isset( $_POST['fingerprint'] ) ? sanitize_text_field( wp_unslash( $_POST['fingerprint'] ) ) : '';
+
+		if ( ! Blt_Secure_Scan_Whitelist::is_valid_fingerprint( $fingerprint ) ) {
+			wp_send_json_error( array( 'message' => __( 'Invalid finding reference.', 'blt-secure' ) ) );
+		}
+
+		$this->plugin->whitelist->remove( $fingerprint );
+		wp_send_json_success( array( 'message' => __( 'Finding restored.', 'blt-secure' ) ) );
 	}
 
 	/**
