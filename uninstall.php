@@ -66,6 +66,7 @@ if ( ! empty( $blt_secure_advanced['delete_data_on_uninstall'] ) ) {
 	delete_option( 'blt_secure_cf_events' );
 	delete_option( 'blt_secure_baseline_results' );
 	delete_option( 'blt_secure_baselines' );
+	delete_option( 'blt_secure_scan_whitelist' );
 
 	// plugin-update-checker state.
 	delete_option( 'external_updates-blt-secure' );

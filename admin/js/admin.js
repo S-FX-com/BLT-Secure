@@ -327,6 +327,56 @@
 		} );
 	}
 
+	// Whitelist: ignore / restore scanner findings (event-delegated so it
+	// works for every finding row across all three scanner sections). Reload
+	// on success so the section scoreboard, notices, and "Ignored findings"
+	// panel all re-render consistently from the server (matching the rest of
+	// the admin UI); surface a short error on the button on failure.
+	function whitelistAction( btn, action, data ) {
+		var original = btn.textContent;
+		btn.disabled = true;
+		post( action, data ).then( function ( json ) {
+			if ( json.success ) {
+				window.location.reload();
+			} else {
+				btn.disabled = false;
+				btn.textContent = cfg.i18n.error;
+				setTimeout( function () {
+					btn.textContent = original;
+				}, 2500 );
+			}
+		} ).catch( function () {
+			btn.disabled = false;
+			btn.textContent = cfg.i18n.error;
+			setTimeout( function () {
+				btn.textContent = original;
+			}, 2500 );
+		} );
+	}
+
+	document.addEventListener( 'click', function ( event ) {
+		if ( ! event.target.closest ) {
+			return;
+		}
+		var ignoreBtn = event.target.closest( '.blt-wl-ignore' );
+		if ( ignoreBtn ) {
+			event.preventDefault();
+			whitelistAction( ignoreBtn, 'blt_secure_whitelist_add', {
+				fingerprint: ignoreBtn.getAttribute( 'data-fp' ),
+				scanner: ignoreBtn.getAttribute( 'data-scanner' ) || '',
+				label: ignoreBtn.getAttribute( 'data-label' ) || ''
+			} );
+			return;
+		}
+		var restoreBtn = event.target.closest( '.blt-wl-restore' );
+		if ( restoreBtn ) {
+			event.preventDefault();
+			whitelistAction( restoreBtn, 'blt_secure_whitelist_remove', {
+				fingerprint: restoreBtn.getAttribute( 'data-fp' )
+			} );
+		}
+	} );
+
 	// Deploy / remove cards.
 	document.querySelectorAll( '.blt-card' ).forEach( function ( card ) {
 		var feature = card.getAttribute( 'data-feature' );

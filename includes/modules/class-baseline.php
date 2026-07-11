@@ -41,14 +41,32 @@ class Blt_Secure_Baseline implements Blt_Secure_Module {
 	private $alerting;
 
 	/**
+	 * Finding whitelist.
+	 *
+	 * @var Blt_Secure_Scan_Whitelist
+	 */
+	private $whitelist;
+
+	/**
 	 * Constructor.
 	 *
-	 * @param Blt_Secure_Options       $options  Settings access.
-	 * @param Blt_Secure_Alerting|null $alerting Alerting sink.
+	 * @param Blt_Secure_Options             $options   Settings access.
+	 * @param Blt_Secure_Alerting|null       $alerting  Alerting sink.
+	 * @param Blt_Secure_Scan_Whitelist|null $whitelist Finding whitelist.
 	 */
-	public function __construct( Blt_Secure_Options $options, $alerting = null ) {
-		$this->options  = $options;
-		$this->alerting = $alerting;
+	public function __construct( Blt_Secure_Options $options, $alerting = null, $whitelist = null ) {
+		$this->options   = $options;
+		$this->alerting  = $alerting;
+		$this->whitelist = $whitelist instanceof Blt_Secure_Scan_Whitelist ? $whitelist : new Blt_Secure_Scan_Whitelist();
+	}
+
+	/**
+	 * The shared finding whitelist.
+	 *
+	 * @return Blt_Secure_Scan_Whitelist
+	 */
+	public function whitelist() {
+		return $this->whitelist;
 	}
 
 	/**
@@ -229,14 +247,17 @@ class Blt_Secure_Baseline implements Blt_Secure_Module {
 			$next[ $target['key'] ] = $stored; // Keep baseline so drift keeps surfacing.
 
 			if ( Blt_Secure_Baseline_Scanner::has_changes( $diff ) && count( $findings ) < self::MAX_FINDINGS ) {
+				$changed    = array_merge( $diff['modified'], $diff['added'], $diff['removed'] );
 				$findings[] = array(
-					'key'      => $target['key'],
-					'label'    => $target['label'],
-					'version'  => $target['version'],
-					'added'    => count( $diff['added'] ),
-					'modified' => count( $diff['modified'] ),
-					'removed'  => count( $diff['removed'] ),
-					'files'    => array_slice( array_merge( $diff['modified'], $diff['added'], $diff['removed'] ), 0, 10 ),
+					'key'         => $target['key'],
+					'label'       => $target['label'],
+					'version'     => $target['version'],
+					'added'       => count( $diff['added'] ),
+					'modified'    => count( $diff['modified'] ),
+					'removed'     => count( $diff['removed'] ),
+					'files'       => array_slice( $changed, 0, 10 ),
+					// Content-sensitive over the FULL changed set so a later edit re-flags.
+					'fingerprint' => Blt_Secure_Baseline_Scanner::drift_fingerprint( $target['key'], $target['version'], $changed, $hashes ),
 				);
 			}
 		}
@@ -251,8 +272,9 @@ class Blt_Secure_Baseline implements Blt_Secure_Module {
 		);
 		update_option( self::RESULTS_OPTION, $payload, false );
 
-		if ( $this->alerting && ! empty( $findings ) ) {
-			$this->alerting->notify( 'baseline_drift', array( 'count' => count( $findings ) ) );
+		$active = $this->whitelist->active( $findings );
+		if ( $this->alerting && ! empty( $active ) ) {
+			$this->alerting->notify( 'baseline_drift', array( 'count' => count( $active ) ) );
 		}
 
 		return $payload;
@@ -298,7 +320,7 @@ class Blt_Secure_Baseline implements Blt_Secure_Module {
 			);
 		}
 
-		$count = isset( $payload['findings'] ) ? count( $payload['findings'] ) : 0;
+		$count = isset( $payload['findings'] ) ? count( $this->whitelist->active( $payload['findings'] ) ) : 0;
 		if ( 0 === $count ) {
 			return array(
 				'status'  => Blt_Secure_Health_Result::PASS,

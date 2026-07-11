@@ -39,6 +39,30 @@ class Test_Baseline_Scanner extends TestCase {
 		$this->assertFalse( Blt_Secure_Baseline_Scanner::is_hashable( 'x/style.css' ) );
 		$this->assertFalse( Blt_Secure_Baseline_Scanner::is_hashable( 'x/photo.png' ) );
 	}
+
+	public function test_drift_fingerprint_is_order_independent_and_stable() {
+		$hashes = array( 'a.php' => 'h1', 'b.php' => 'h2' );
+		$fp1    = Blt_Secure_Baseline_Scanner::drift_fingerprint( 'plugin/acme', '1.0', array( 'a.php', 'b.php' ), $hashes );
+		$fp2    = Blt_Secure_Baseline_Scanner::drift_fingerprint( 'plugin/acme', '1.0', array( 'b.php', 'a.php' ), $hashes );
+		$this->assertSame( $fp1, $fp2, 'File order must not change the fingerprint.' );
+		$this->assertMatchesRegularExpression( '/^[a-f0-9]{40}$/', $fp1 );
+	}
+
+	public function test_drift_fingerprint_changes_when_a_whitelisted_file_is_modified_again() {
+		// An admin accepts (ignores) a drift; the fingerprint must change if
+		// one of those files is later altered again — otherwise a backdoor
+		// edited into an accepted change would stay suppressed forever.
+		$before = Blt_Secure_Baseline_Scanner::drift_fingerprint( 'plugin/acme', '1.0', array( 'a.php' ), array( 'a.php' => 'clean-hash' ) );
+		$after  = Blt_Secure_Baseline_Scanner::drift_fingerprint( 'plugin/acme', '1.0', array( 'a.php' ), array( 'a.php' => 'evil-hash' ) );
+		$this->assertNotSame( $before, $after );
+	}
+
+	public function test_drift_fingerprint_varies_by_extension_and_version() {
+		$hashes = array( 'a.php' => 'h1' );
+		$base   = Blt_Secure_Baseline_Scanner::drift_fingerprint( 'plugin/acme', '1.0', array( 'a.php' ), $hashes );
+		$this->assertNotSame( $base, Blt_Secure_Baseline_Scanner::drift_fingerprint( 'plugin/other', '1.0', array( 'a.php' ), $hashes ) );
+		$this->assertNotSame( $base, Blt_Secure_Baseline_Scanner::drift_fingerprint( 'plugin/acme', '2.0', array( 'a.php' ), $hashes ) );
+	}
 }
 
 /**

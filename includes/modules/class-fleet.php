@@ -52,16 +52,25 @@ class Blt_Secure_Fleet implements Blt_Secure_Module {
 	private $alerting;
 
 	/**
+	 * Finding whitelist (so the snapshot mirrors the local active counts).
+	 *
+	 * @var Blt_Secure_Scan_Whitelist
+	 */
+	private $whitelist;
+
+	/**
 	 * Constructor.
 	 *
 	 * @param Blt_Secure_Options          $options     Settings access.
 	 * @param Blt_Secure_Credential_Store $credentials Credential store.
 	 * @param Blt_Secure_Alerting|null    $alerting    Alerting sink (optional).
+	 * @param Blt_Secure_Scan_Whitelist|null $whitelist Finding whitelist (optional).
 	 */
-	public function __construct( Blt_Secure_Options $options, Blt_Secure_Credential_Store $credentials, $alerting = null ) {
+	public function __construct( Blt_Secure_Options $options, Blt_Secure_Credential_Store $credentials, $alerting = null, $whitelist = null ) {
 		$this->options     = $options;
 		$this->credentials = $credentials;
 		$this->alerting    = $alerting;
+		$this->whitelist   = $whitelist instanceof Blt_Secure_Scan_Whitelist ? $whitelist : new Blt_Secure_Scan_Whitelist();
 	}
 
 	/**
@@ -362,14 +371,34 @@ class Blt_Secure_Fleet implements Blt_Secure_Module {
 					'php'    => PHP_VERSION,
 				),
 				'health'      => get_option( 'blt_secure_health_results', array() ),
-				'core'        => get_option( 'blt_secure_core_scan_results', array() ),
-				'malware'     => get_option( 'blt_secure_malware_results', array() ),
-				'baseline'    => get_option( 'blt_secure_baseline_results', array() ),
+				// Whitelisted (ignored) findings are excluded so the dashboard
+				// mirrors the site's own active counts and health score.
+				'core'        => $this->without_ignored( get_option( 'blt_secure_core_scan_results', array() ), 'issues' ),
+				'malware'     => $this->without_ignored( get_option( 'blt_secure_malware_results', array() ), 'findings' ),
+				'baseline'    => $this->without_ignored( get_option( 'blt_secure_baseline_results', array() ), 'findings' ),
 				'ioc'         => get_option( 'blt_secure_ioc_state', array() ),
 				'cf_zone'     => $zone,
 				'events'      => get_option( 'blt_secure_events', array() ),
 			)
 		);
+	}
+
+	/**
+	 * Return a scan payload with its finding list filtered to active
+	 * (non-whitelisted) findings.
+	 *
+	 * @param mixed  $payload Stored scan payload.
+	 * @param string $key     Finding-list key ('issues' or 'findings').
+	 * @return array
+	 */
+	private function without_ignored( $payload, $key ) {
+		if ( ! is_array( $payload ) ) {
+			return array();
+		}
+		if ( ! empty( $payload[ $key ] ) && is_array( $payload[ $key ] ) ) {
+			$payload[ $key ] = $this->whitelist->active( $payload[ $key ] );
+		}
+		return $payload;
 	}
 
 	/**

@@ -2,9 +2,10 @@
 /**
  * Scanner tab: core file integrity + malware signature results.
  *
- * @var Blt_Secure_Scanner|null  $scanner  Core scanner module (null if disabled).
- * @var Blt_Secure_Malware|null  $malware  Malware module (null if disabled).
- * @var Blt_Secure_Baseline|null $baseline Baseline module (null if disabled).
+ * @var Blt_Secure_Scanner|null       $scanner   Core scanner module (null if disabled).
+ * @var Blt_Secure_Malware|null       $malware   Malware module (null if disabled).
+ * @var Blt_Secure_Baseline|null      $baseline  Baseline module (null if disabled).
+ * @var Blt_Secure_Scan_Whitelist     $whitelist Shared finding whitelist.
  *
  * @package Blt_Secure
  */
@@ -15,6 +16,13 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 $blt_secure_scan = $scanner ? $scanner->latest() : null;
 $blt_secure_mw   = $malware ? $malware->latest() : null;
+
+$blt_secure_core_issues  = ( $blt_secure_scan && ! empty( $blt_secure_scan['issues'] ) ) ? $blt_secure_scan['issues'] : array();
+$blt_secure_core_active  = $whitelist->active( $blt_secure_core_issues );
+$blt_secure_core_ignored = $whitelist->ignored( $blt_secure_core_issues );
+$blt_secure_mw_findings  = ( $blt_secure_mw && ! empty( $blt_secure_mw['findings'] ) ) ? $blt_secure_mw['findings'] : array();
+$blt_secure_mw_active    = $whitelist->active( $blt_secure_mw_findings );
+$blt_secure_mw_ignored   = $whitelist->ignored( $blt_secure_mw_findings );
 
 $blt_secure_core_meta = array(
 	Blt_Secure_Core_Scanner::STATUS_MODIFIED => __( 'Modified', 'blt-secure' ),
@@ -42,7 +50,7 @@ $blt_secure_sev_class = array(
 
 		<?php if ( $blt_secure_scan && empty( $blt_secure_scan['error'] ) ) : ?>
 			<?php
-			$blt_secure_issue_count = isset( $blt_secure_scan['issues'] ) ? count( $blt_secure_scan['issues'] ) : 0;
+			$blt_secure_issue_count = count( $blt_secure_core_active );
 			$blt_secure_clean       = ( 0 === $blt_secure_issue_count );
 			?>
 			<div class="blt-hc-scoreboard">
@@ -77,20 +85,22 @@ $blt_secure_sev_class = array(
 			<span id="blt-scan-status" class="blt-card-message"></span>
 		</p>
 
-		<?php if ( $blt_secure_scan && empty( $blt_secure_scan['error'] ) && ! empty( $blt_secure_scan['issues'] ) ) : ?>
+		<?php if ( ! empty( $blt_secure_core_active ) ) : ?>
 			<ul class="blt-hc-list">
-				<?php foreach ( $blt_secure_scan['issues'] as $blt_secure_issue ) : ?>
+				<?php foreach ( $blt_secure_core_active as $blt_secure_issue ) : ?>
 					<?php
 					$blt_secure_st    = isset( $blt_secure_issue['status'] ) ? $blt_secure_issue['status'] : Blt_Secure_Core_Scanner::STATUS_MODIFIED;
 					$blt_secure_label = isset( $blt_secure_core_meta[ $blt_secure_st ] ) ? $blt_secure_core_meta[ $blt_secure_st ] : $blt_secure_st;
 					$blt_secure_cls   = Blt_Secure_Core_Scanner::STATUS_MISSING === $blt_secure_st ? 'blt-hc-warn' : 'blt-hc-fail';
+					$blt_secure_path  = isset( $blt_secure_issue['path'] ) ? $blt_secure_issue['path'] : '';
 					?>
 					<li class="blt-hc-item <?php echo esc_attr( $blt_secure_cls ); ?>">
 						<span class="blt-hc-icon" aria-hidden="true">!</span>
 						<span class="blt-hc-body">
-							<span class="blt-hc-title"><code><?php echo esc_html( isset( $blt_secure_issue['path'] ) ? $blt_secure_issue['path'] : '' ); ?></code></span>
+							<span class="blt-hc-title"><code><?php echo esc_html( $blt_secure_path ); ?></code></span>
 							<span class="blt-hc-msg"><?php echo esc_html( $blt_secure_label ); ?></span>
 						</span>
+						<?php blt_secure_ignore_button( 'core', isset( $blt_secure_issue['fingerprint'] ) ? $blt_secure_issue['fingerprint'] : '', $blt_secure_label . ' — ' . $blt_secure_path ); ?>
 					</li>
 				<?php endforeach; ?>
 			</ul>
@@ -98,9 +108,24 @@ $blt_secure_sev_class = array(
 				<p class="description"><?php esc_html_e( 'The list was truncated — fix these and re-scan to see any remaining issues.', 'blt-secure' ); ?></p>
 			<?php endif; ?>
 			<p class="description"><?php esc_html_e( 'To restore modified or missing core files, go to Dashboard → Updates and click “Re-install version”. Investigate any “unexpected” files before deleting them.', 'blt-secure' ); ?></p>
-		<?php elseif ( $blt_secure_scan && empty( $blt_secure_scan['error'] ) ) : ?>
+		<?php elseif ( $blt_secure_scan && empty( $blt_secure_scan['error'] ) && empty( $blt_secure_core_ignored ) ) : ?>
 			<div class="notice notice-success inline"><p><?php esc_html_e( 'Every core file matches the official WordPress checksums.', 'blt-secure' ); ?></p></div>
 		<?php endif; ?>
+
+		<?php
+		if ( ! empty( $blt_secure_core_ignored ) ) {
+			$blt_secure_items = array();
+			foreach ( $blt_secure_core_ignored as $blt_secure_issue ) {
+				$blt_secure_st      = isset( $blt_secure_issue['status'] ) ? $blt_secure_issue['status'] : Blt_Secure_Core_Scanner::STATUS_MODIFIED;
+				$blt_secure_items[] = array(
+					'title'       => isset( $blt_secure_issue['path'] ) ? $blt_secure_issue['path'] : '',
+					'meta'        => isset( $blt_secure_core_meta[ $blt_secure_st ] ) ? $blt_secure_core_meta[ $blt_secure_st ] : $blt_secure_st,
+					'fingerprint' => isset( $blt_secure_issue['fingerprint'] ) ? $blt_secure_issue['fingerprint'] : '',
+				);
+			}
+			blt_secure_ignored_details( $blt_secure_items );
+		}
+		?>
 
 	<?php endif; ?>
 
@@ -108,7 +133,7 @@ $blt_secure_sev_class = array(
 
 	<h2 class="blt-hc-cat"><?php esc_html_e( 'Malware scan', 'blt-secure' ); ?></h2>
 	<p class="description">
-		<?php esc_html_e( 'Scans wp-content (uploads, plugins, themes, mu-plugins) for known malware and webshell signatures. Signature matches are occasionally false positives — inspect each flagged file before acting. Runs automatically once a week.', 'blt-secure' ); ?>
+		<?php esc_html_e( 'Scans wp-content (uploads, plugins, themes, mu-plugins) for known malware and webshell signatures, and specifically flags any executable or script file (PHP, HTML, JS, SVG, server scripts, config overrides) found in the uploads directory — where only media and documents belong. Signature matches are occasionally false positives — inspect each flagged file before acting. Runs automatically once a week.', 'blt-secure' ); ?>
 	</p>
 
 	<?php if ( null === $malware ) : ?>
@@ -117,7 +142,7 @@ $blt_secure_sev_class = array(
 
 		<?php if ( $blt_secure_mw && empty( $blt_secure_mw['error'] ) ) : ?>
 			<?php
-			$blt_secure_mw_count = isset( $blt_secure_mw['findings'] ) ? count( $blt_secure_mw['findings'] ) : 0;
+			$blt_secure_mw_count = count( $blt_secure_mw_active );
 			$blt_secure_mw_clean = ( 0 === $blt_secure_mw_count );
 			?>
 			<div class="blt-hc-scoreboard">
@@ -151,18 +176,20 @@ $blt_secure_sev_class = array(
 			<span id="blt-mw-status" class="blt-card-message"></span>
 		</p>
 
-		<?php if ( $blt_secure_mw && empty( $blt_secure_mw['error'] ) && ! empty( $blt_secure_mw['findings'] ) ) : ?>
+		<?php if ( ! empty( $blt_secure_mw_active ) ) : ?>
 			<ul class="blt-hc-list">
-				<?php foreach ( $blt_secure_mw['findings'] as $blt_secure_find ) : ?>
+				<?php foreach ( $blt_secure_mw_active as $blt_secure_find ) : ?>
 					<?php
-					$blt_secure_sev = isset( $blt_secure_find['severity'] ) ? $blt_secure_find['severity'] : 'medium';
-					$blt_secure_cls = isset( $blt_secure_sev_class[ $blt_secure_sev ] ) ? $blt_secure_sev_class[ $blt_secure_sev ] : 'blt-hc-warn';
-					$blt_secure_ln  = isset( $blt_secure_find['line'] ) ? (int) $blt_secure_find['line'] : 0;
+					$blt_secure_sev  = isset( $blt_secure_find['severity'] ) ? $blt_secure_find['severity'] : 'medium';
+					$blt_secure_cls  = isset( $blt_secure_sev_class[ $blt_secure_sev ] ) ? $blt_secure_sev_class[ $blt_secure_sev ] : 'blt-hc-warn';
+					$blt_secure_ln   = isset( $blt_secure_find['line'] ) ? (int) $blt_secure_find['line'] : 0;
+					$blt_secure_path = isset( $blt_secure_find['path'] ) ? $blt_secure_find['path'] : '';
+					$blt_secure_desc = isset( $blt_secure_find['description'] ) ? $blt_secure_find['description'] : '';
 					?>
 					<li class="blt-hc-item <?php echo esc_attr( $blt_secure_cls ); ?>">
 						<span class="blt-hc-icon" aria-hidden="true">!</span>
 						<span class="blt-hc-body">
-							<span class="blt-hc-title"><code><?php echo esc_html( isset( $blt_secure_find['path'] ) ? $blt_secure_find['path'] : '' ); ?></code>
+							<span class="blt-hc-title"><code><?php echo esc_html( $blt_secure_path ); ?></code>
 								<?php if ( $blt_secure_ln > 0 ) : ?>
 									<?php
 									printf(
@@ -175,21 +202,36 @@ $blt_secure_sev_class = array(
 							</span>
 							<span class="blt-hc-msg">
 								<strong><?php echo esc_html( ucfirst( $blt_secure_sev ) ); ?>:</strong>
-								<?php echo esc_html( isset( $blt_secure_find['description'] ) ? $blt_secure_find['description'] : '' ); ?>
+								<?php echo esc_html( $blt_secure_desc ); ?>
 							</span>
 							<?php if ( ! empty( $blt_secure_find['snippet'] ) ) : ?>
 								<span class="blt-hc-details"><code><?php echo esc_html( $blt_secure_find['snippet'] ); ?></code></span>
 							<?php endif; ?>
 						</span>
+						<?php blt_secure_ignore_button( 'malware', isset( $blt_secure_find['fingerprint'] ) ? $blt_secure_find['fingerprint'] : '', $blt_secure_path . ' — ' . $blt_secure_desc ); ?>
 					</li>
 				<?php endforeach; ?>
 			</ul>
 			<?php if ( ! empty( $blt_secure_mw['truncated'] ) ) : ?>
 				<p class="description"><?php esc_html_e( 'The findings list was truncated — clean these up and re-scan to see the rest.', 'blt-secure' ); ?></p>
 			<?php endif; ?>
-		<?php elseif ( $blt_secure_mw && empty( $blt_secure_mw['error'] ) ) : ?>
+		<?php elseif ( $blt_secure_mw && empty( $blt_secure_mw['error'] ) && empty( $blt_secure_mw_ignored ) ) : ?>
 			<div class="notice notice-success inline"><p><?php esc_html_e( 'No files in wp-content matched the malware signatures.', 'blt-secure' ); ?></p></div>
 		<?php endif; ?>
+
+		<?php
+		if ( ! empty( $blt_secure_mw_ignored ) ) {
+			$blt_secure_items = array();
+			foreach ( $blt_secure_mw_ignored as $blt_secure_find ) {
+				$blt_secure_items[] = array(
+					'title'       => isset( $blt_secure_find['path'] ) ? $blt_secure_find['path'] : '',
+					'meta'        => isset( $blt_secure_find['description'] ) ? $blt_secure_find['description'] : '',
+					'fingerprint' => isset( $blt_secure_find['fingerprint'] ) ? $blt_secure_find['fingerprint'] : '',
+				);
+			}
+			blt_secure_ignored_details( $blt_secure_items );
+		}
+		?>
 
 	<?php endif; ?>
 
@@ -203,11 +245,16 @@ $blt_secure_sev_class = array(
 	<?php if ( null === $baseline ) : ?>
 		<div class="notice notice-warning inline"><p><?php esc_html_e( 'The baseline monitor is disabled.', 'blt-secure' ); ?></p></div>
 	<?php else : ?>
-		<?php $blt_secure_bl = $baseline->latest(); ?>
+		<?php
+		$blt_secure_bl          = $baseline->latest();
+		$blt_secure_bl_findings = ( $blt_secure_bl && ! empty( $blt_secure_bl['findings'] ) ) ? $blt_secure_bl['findings'] : array();
+		$blt_secure_bl_active   = $whitelist->active( $blt_secure_bl_findings );
+		$blt_secure_bl_ignored  = $whitelist->ignored( $blt_secure_bl_findings );
+		?>
 
 		<?php if ( $blt_secure_bl ) : ?>
 			<?php
-			$blt_secure_bl_count = isset( $blt_secure_bl['findings'] ) ? count( $blt_secure_bl['findings'] ) : 0;
+			$blt_secure_bl_count = count( $blt_secure_bl_active );
 			$blt_secure_bl_clean = ( 0 === $blt_secure_bl_count );
 			?>
 			<div class="blt-hc-scoreboard">
@@ -239,13 +286,14 @@ $blt_secure_sev_class = array(
 			<span id="blt-bl-status" class="blt-card-message"></span>
 		</p>
 
-		<?php if ( $blt_secure_bl && ! empty( $blt_secure_bl['findings'] ) ) : ?>
+		<?php if ( ! empty( $blt_secure_bl_active ) ) : ?>
 			<ul class="blt-hc-list">
-				<?php foreach ( $blt_secure_bl['findings'] as $blt_secure_bf ) : ?>
+				<?php foreach ( $blt_secure_bl_active as $blt_secure_bf ) : ?>
+					<?php $blt_secure_bf_label = isset( $blt_secure_bf['label'] ) ? $blt_secure_bf['label'] : $blt_secure_bf['key']; ?>
 					<li class="blt-hc-item blt-hc-fail">
 						<span class="blt-hc-icon" aria-hidden="true">!</span>
 						<span class="blt-hc-body">
-							<span class="blt-hc-title"><?php echo esc_html( isset( $blt_secure_bf['label'] ) ? $blt_secure_bf['label'] : $blt_secure_bf['key'] ); ?></span>
+							<span class="blt-hc-title"><?php echo esc_html( $blt_secure_bf_label ); ?></span>
 							<span class="blt-hc-msg">
 								<?php
 								printf(
@@ -261,12 +309,28 @@ $blt_secure_sev_class = array(
 								<span class="blt-hc-details"><code><?php echo esc_html( implode( ', ', $blt_secure_bf['files'] ) ); ?></code></span>
 							<?php endif; ?>
 						</span>
+						<?php blt_secure_ignore_button( 'baseline', isset( $blt_secure_bf['fingerprint'] ) ? $blt_secure_bf['fingerprint'] : '', $blt_secure_bf_label ); ?>
 					</li>
 				<?php endforeach; ?>
 			</ul>
-		<?php elseif ( $blt_secure_bl ) : ?>
+		<?php elseif ( $blt_secure_bl && empty( $blt_secure_bl_ignored ) ) : ?>
 			<div class="notice notice-success inline"><p><?php esc_html_e( 'Every tracked plugin and theme matches its baseline.', 'blt-secure' ); ?></p></div>
 		<?php endif; ?>
+
+		<?php
+		if ( ! empty( $blt_secure_bl_ignored ) ) {
+			$blt_secure_items = array();
+			foreach ( $blt_secure_bl_ignored as $blt_secure_bf ) {
+				$blt_secure_items[] = array(
+					'title'       => isset( $blt_secure_bf['label'] ) ? $blt_secure_bf['label'] : ( isset( $blt_secure_bf['key'] ) ? $blt_secure_bf['key'] : '' ),
+					'meta'        => __( 'Changed without a version update', 'blt-secure' ),
+					'fingerprint' => isset( $blt_secure_bf['fingerprint'] ) ? $blt_secure_bf['fingerprint'] : '',
+					'code'        => false,
+				);
+			}
+			blt_secure_ignored_details( $blt_secure_items );
+		}
+		?>
 
 	<?php endif; ?>
 </div>
