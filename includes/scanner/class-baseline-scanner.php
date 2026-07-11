@@ -82,6 +82,32 @@ class Blt_Secure_Baseline_Scanner {
 	}
 
 	/**
+	 * Content-sensitive whitelist fingerprint for a drift finding.
+	 *
+	 * Pure function (unit-tested). Folds the current hash of every changed
+	 * file into the fingerprint so that ignoring a drift finding only
+	 * suppresses that exact set of changes — if a whitelisted file is altered
+	 * again (e.g. a backdoor edited into an already-accepted change), its hash
+	 * differs and the finding re-appears. Removed files (no current hash) key
+	 * on a stable marker so re-adding one with content re-flags.
+	 *
+	 * @param string   $key     Extension key (slug/version namespace).
+	 * @param string   $version Extension version.
+	 * @param string[] $changed Every changed path (added/modified/removed).
+	 * @param array    $current Current path => md5 map.
+	 * @return string
+	 */
+	public static function drift_fingerprint( $key, $version, array $changed, array $current ) {
+		$changed = array_values( array_unique( $changed ) );
+		sort( $changed );
+		$parts = array();
+		foreach ( $changed as $file ) {
+			$parts[] = $file . ':' . ( isset( $current[ $file ] ) ? (string) $current[ $file ] : 'removed' );
+		}
+		return Blt_Secure_Scan_Whitelist::fingerprint( 'baseline', array( (string) $key, (string) $version, implode( ',', $parts ) ) );
+	}
+
+	/**
 	 * Hash every PHP-family file under a directory, dir-relative.
 	 *
 	 * @param string $dir Absolute directory.

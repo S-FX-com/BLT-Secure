@@ -188,8 +188,6 @@ class Blt_Secure_Admin {
 					'polling'   => __( 'Polling Cloudflare…', 'blt-secure' ),
 					'baseScan'  => __( 'Checking plugin/theme integrity…', 'blt-secure' ),
 					'reporting' => __( 'Reporting to dashboard…', 'blt-secure' ),
-					'ignored'   => __( 'Ignored', 'blt-secure' ),
-					'restored'  => __( 'Restored', 'blt-secure' ),
 				),
 			)
 		);

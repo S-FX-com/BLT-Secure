@@ -92,8 +92,8 @@ class Blt_Secure_Scan_Whitelist {
 
 		$all                 = $this->all();
 		$all[ $fingerprint ] = array(
-			'scanner' => isset( $meta['scanner'] ) ? (string) $meta['scanner'] : '',
-			'label'   => isset( $meta['label'] ) ? (string) $meta['label'] : '',
+			'scanner' => isset( $meta['scanner'] ) ? substr( (string) $meta['scanner'], 0, 32 ) : '',
+			'label'   => isset( $meta['label'] ) ? substr( (string) $meta['label'], 0, 200 ) : '',
 			'time'    => isset( $meta['time'] ) ? (int) $meta['time'] : time(),
 			'user'    => isset( $meta['user'] ) ? (int) $meta['user'] : 0,
 		);

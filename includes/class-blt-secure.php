@@ -114,7 +114,7 @@ final class Blt_Secure {
 			new Blt_Secure_Baseline( $this->options, $alerting, $this->whitelist ),
 			new Blt_Secure_Ioc( $this->options, $this->credentials, $alerting ),
 			new Blt_Secure_Timeline( $this->options, $this->credentials, $alerting ),
-			new Blt_Secure_Fleet( $this->options, $this->credentials, $alerting ),
+			new Blt_Secure_Fleet( $this->options, $this->credentials, $alerting, $this->whitelist ),
 			new Blt_Secure_Badge( $this->options ),
 		);
 

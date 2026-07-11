@@ -108,7 +108,7 @@ $blt_secure_sev_class = array(
 				<p class="description"><?php esc_html_e( 'The list was truncated — fix these and re-scan to see any remaining issues.', 'blt-secure' ); ?></p>
 			<?php endif; ?>
 			<p class="description"><?php esc_html_e( 'To restore modified or missing core files, go to Dashboard → Updates and click “Re-install version”. Investigate any “unexpected” files before deleting them.', 'blt-secure' ); ?></p>
-		<?php elseif ( $blt_secure_scan && empty( $blt_secure_scan['error'] ) ) : ?>
+		<?php elseif ( $blt_secure_scan && empty( $blt_secure_scan['error'] ) && empty( $blt_secure_core_ignored ) ) : ?>
 			<div class="notice notice-success inline"><p><?php esc_html_e( 'Every core file matches the official WordPress checksums.', 'blt-secure' ); ?></p></div>
 		<?php endif; ?>
 
@@ -215,7 +215,7 @@ $blt_secure_sev_class = array(
 			<?php if ( ! empty( $blt_secure_mw['truncated'] ) ) : ?>
 				<p class="description"><?php esc_html_e( 'The findings list was truncated — clean these up and re-scan to see the rest.', 'blt-secure' ); ?></p>
 			<?php endif; ?>
-		<?php elseif ( $blt_secure_mw && empty( $blt_secure_mw['error'] ) ) : ?>
+		<?php elseif ( $blt_secure_mw && empty( $blt_secure_mw['error'] ) && empty( $blt_secure_mw_ignored ) ) : ?>
 			<div class="notice notice-success inline"><p><?php esc_html_e( 'No files in wp-content matched the malware signatures.', 'blt-secure' ); ?></p></div>
 		<?php endif; ?>
 
@@ -313,7 +313,7 @@ $blt_secure_sev_class = array(
 					</li>
 				<?php endforeach; ?>
 			</ul>
-		<?php elseif ( $blt_secure_bl ) : ?>
+		<?php elseif ( $blt_secure_bl && empty( $blt_secure_bl_ignored ) ) : ?>
 			<div class="notice notice-success inline"><p><?php esc_html_e( 'Every tracked plugin and theme matches its baseline.', 'blt-secure' ); ?></p></div>
 		<?php endif; ?>
 
@@ -325,6 +325,7 @@ $blt_secure_sev_class = array(
 					'title'       => isset( $blt_secure_bf['label'] ) ? $blt_secure_bf['label'] : ( isset( $blt_secure_bf['key'] ) ? $blt_secure_bf['key'] : '' ),
 					'meta'        => __( 'Changed without a version update', 'blt-secure' ),
 					'fingerprint' => isset( $blt_secure_bf['fingerprint'] ) ? $blt_secure_bf['fingerprint'] : '',
+					'code'        => false,
 				);
 			}
 			blt_secure_ignored_details( $blt_secure_items );

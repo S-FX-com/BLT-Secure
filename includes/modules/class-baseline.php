@@ -247,7 +247,7 @@ class Blt_Secure_Baseline implements Blt_Secure_Module {
 			$next[ $target['key'] ] = $stored; // Keep baseline so drift keeps surfacing.
 
 			if ( Blt_Secure_Baseline_Scanner::has_changes( $diff ) && count( $findings ) < self::MAX_FINDINGS ) {
-				$files      = array_slice( array_merge( $diff['modified'], $diff['added'], $diff['removed'] ), 0, 10 );
+				$changed    = array_merge( $diff['modified'], $diff['added'], $diff['removed'] );
 				$findings[] = array(
 					'key'         => $target['key'],
 					'label'       => $target['label'],
@@ -255,8 +255,9 @@ class Blt_Secure_Baseline implements Blt_Secure_Module {
 					'added'       => count( $diff['added'] ),
 					'modified'    => count( $diff['modified'] ),
 					'removed'     => count( $diff['removed'] ),
-					'files'       => $files,
-					'fingerprint' => Blt_Secure_Scan_Whitelist::fingerprint( 'baseline', array( $target['key'], $target['version'], implode( ',', $files ) ) ),
+					'files'       => array_slice( $changed, 0, 10 ),
+					// Content-sensitive over the FULL changed set so a later edit re-flags.
+					'fingerprint' => Blt_Secure_Baseline_Scanner::drift_fingerprint( $target['key'], $target['version'], $changed, $hashes ),
 				);
 			}
 		}

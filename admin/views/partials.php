@@ -106,7 +106,8 @@ if ( ! function_exists( 'blt_secure_ignored_details' ) ) {
 	 * Echo a collapsed "Ignored findings" panel with a Restore button per item.
 	 * No-op when there is nothing ignored.
 	 *
-	 * @param array[] $items Each: [ 'title' => string, 'meta' => string, 'fingerprint' => string ].
+	 * @param array[] $items Each: [ 'title' => string, 'meta' => string, 'fingerprint' => string, 'code' => bool ].
+	 *                       'code' (default true) renders the title in a <code> tag (for file paths).
 	 * @return void
 	 */
 	function blt_secure_ignored_details( array $items ) {
@@ -127,10 +128,16 @@ if ( ! function_exists( 'blt_secure_ignored_details' ) ) {
 		);
 		echo '<ul class="blt-hc-list">';
 		foreach ( $items as $item ) {
+			$title    = isset( $item['title'] ) ? $item['title'] : '';
+			$use_code = ! isset( $item['code'] ) || $item['code'];
 			echo '<li class="blt-hc-item blt-wl-item">';
 			echo '<span class="blt-hc-icon" aria-hidden="true">&ndash;</span>';
 			echo '<span class="blt-hc-body">';
-			echo '<span class="blt-hc-title"><code>' . esc_html( isset( $item['title'] ) ? $item['title'] : '' ) . '</code></span>';
+			if ( $use_code ) {
+				echo '<span class="blt-hc-title"><code>' . esc_html( $title ) . '</code></span>';
+			} else {
+				echo '<span class="blt-hc-title">' . esc_html( $title ) . '</span>';
+			}
 			if ( ! empty( $item['meta'] ) ) {
 				echo '<span class="blt-hc-msg">' . esc_html( $item['meta'] ) . '</span>';
 			}
