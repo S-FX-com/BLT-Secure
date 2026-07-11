@@ -33,6 +33,11 @@ class Blt_Secure_Health_Fixes {
 	 * @return array<string,array{label:string,callback:callable}>
 	 */
 	public static function all() {
+		static $cache = null;
+		if ( null !== $cache ) {
+			return $cache;
+		}
+
 		$c = __CLASS__;
 
 		$fixes = array(
@@ -80,14 +85,12 @@ class Blt_Secure_Health_Fixes {
 				'label'    => __( 'Send header', 'blt-secure' ),
 				'callback' => array( $c, 'fix_header_referrer' ),
 			),
-			'header_hsts'           => array(
-				'label'    => __( 'Enable HSTS', 'blt-secure' ),
-				'callback' => array( $c, 'fix_header_hsts' ),
-			),
-			'header_csp'            => array(
-				'label'    => __( 'Enable CSP', 'blt-secure' ),
-				'callback' => array( $c, 'fix_header_csp' ),
-			),
+			// HSTS and CSP are deliberately NOT auto-fixed: HSTS depends on
+			// is_ssl() at the origin (false behind Cloudflare Flexible / a TLS-
+			// terminating proxy, so the header never emits and the warning would
+			// persist), and a one-click enforcing CSP risks breaking the site —
+			// the safe default is Report-Only, which the check reports as a
+			// warning anyway. Both stay guidance-only on the Hardening tab.
 		);
 
 		/**
@@ -96,7 +99,8 @@ class Blt_Secure_Health_Fixes {
 		 *
 		 * @param array $fixes check id => [ label, callback ].
 		 */
-		return apply_filters( 'blt_secure_health_fixes', $fixes );
+		$cache = apply_filters( 'blt_secure_health_fixes', $fixes );
+		return $cache;
 	}
 
 	/**
@@ -250,37 +254,6 @@ class Blt_Secure_Health_Fixes {
 			array(
 				'enabled'         => true,
 				'referrer_policy' => 'strict-origin-when-cross-origin',
-			)
-		);
-	}
-
-	/**
-	 * @param Blt_Secure_Options $options Settings.
-	 * @return true
-	 */
-	public static function fix_header_hsts( $options ) {
-		return self::set_section(
-			$options,
-			'headers',
-			array(
-				'enabled' => true,
-				'hsts'    => true,
-			)
-		);
-	}
-
-	/**
-	 * @param Blt_Secure_Options $options Settings.
-	 * @return true
-	 */
-	public static function fix_header_csp( $options ) {
-		return self::set_section(
-			$options,
-			'headers',
-			array(
-				'enabled'         => true,
-				'csp_enabled'     => true,
-				'csp_report_only' => true,
 			)
 		);
 	}

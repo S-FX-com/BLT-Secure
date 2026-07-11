@@ -119,6 +119,7 @@ $blt_secure_status_meta = array(
 					<?php endforeach; ?>
 				</ul>
 			<?php endforeach; ?>
+			<p class="blt-hc-noresults" hidden><?php esc_html_e( 'No checks match this filter.', 'blt-secure' ); ?></p>
 		<?php endif; ?>
 
 	<?php endif; ?>

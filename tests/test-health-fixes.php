@@ -30,11 +30,15 @@ class Test_Health_Fixes extends TestCase {
 
 	public function test_is_fixable_only_for_registered_checks() {
 		$this->assertTrue( Blt_Secure_Health_Fixes::is_fixable( 'login_lockout' ) );
-		$this->assertTrue( Blt_Secure_Health_Fixes::is_fixable( 'header_csp' ) );
+		$this->assertTrue( Blt_Secure_Health_Fixes::is_fixable( 'header_nosniff' ) );
 		// Not fixable from the plugin (wp-config constant, updates, no lever).
 		$this->assertFalse( Blt_Secure_Health_Fixes::is_fixable( 'wp_debug_off' ) );
 		$this->assertFalse( Blt_Secure_Health_Fixes::is_fixable( 'plugins_updated' ) );
 		$this->assertFalse( Blt_Secure_Health_Fixes::is_fixable( 'header_permissions' ) );
+		// HSTS (is_ssl() at the origin) and CSP (Report-Only can't clear the
+		// warning; enforcing risks breakage) are intentionally not auto-fixed.
+		$this->assertFalse( Blt_Secure_Health_Fixes::is_fixable( 'header_hsts' ) );
+		$this->assertFalse( Blt_Secure_Health_Fixes::is_fixable( 'header_csp' ) );
 		$this->assertFalse( Blt_Secure_Health_Fixes::is_fixable( 'nope' ) );
 	}
 
@@ -89,11 +93,10 @@ class Test_Health_Fixes extends TestCase {
 		$this->assertTrue( (bool) $options->get( 'headers', 'nosniff' ) );
 	}
 
-	public function test_csp_fix_stays_report_only() {
-		$options = new Blt_Secure_Options();
-		$this->assertTrue( Blt_Secure_Health_Fixes::apply( 'header_csp', $options ) );
-		$this->assertTrue( (bool) $options->get( 'headers', 'csp_enabled' ) );
-		$this->assertTrue( (bool) $options->get( 'headers', 'csp_report_only' ) );
+	public function test_dropped_header_fixes_are_not_applied() {
+		// CSP and HSTS were removed from the catalogue; applying them errors.
+		$this->assertInstanceOf( 'WP_Error', Blt_Secure_Health_Fixes::apply( 'header_csp', new Blt_Secure_Options() ) );
+		$this->assertInstanceOf( 'WP_Error', Blt_Secure_Health_Fixes::apply( 'header_hsts', new Blt_Secure_Options() ) );
 	}
 
 	public function test_set_section_preserves_other_saved_keys() {

@@ -376,6 +376,12 @@
 	font-size: 12px;
 }
 
+/* Author display rules (e.g. .blt-hc-item{display:flex}) outrank the UA
+   [hidden]{display:none}, so the JS filter's hidden attribute needs help. */
+.blt-hc [hidden] {
+	display: none !important;
+}
+
 /* Clickable status filters on the score tallies. */
 .blt-hc-filter {
 	cursor: pointer;
@@ -385,15 +391,24 @@
 	user-select: none;
 }
 
-.blt-hc-filter:hover,
-.blt-hc-filter:focus {
+.blt-hc-filter:hover {
 	background: #f0f0f1;
-	outline: none;
+}
+
+.blt-hc-filter:focus-visible {
+	outline: 2px solid #2271b1;
+	outline-offset: 1px;
 }
 
 .blt-hc-filter.is-active {
 	background: #f0f6fc;
 	box-shadow: inset 0 0 0 2px #2271b1;
+}
+
+.blt-hc-noresults {
+	color: #646970;
+	font-style: italic;
+	margin: 12px 0;
 }
 
 /* Fix / ignore actions sit at the right edge of a result row. */

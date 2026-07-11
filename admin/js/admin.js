@@ -336,6 +336,7 @@
 		var applyHealthFilter = function ( status ) {
 			hcActive = status;
 			var lists = document.querySelectorAll( '.blt-hc .blt-hc-list' );
+			var anyRowVisible = false;
 			lists.forEach( function ( ul ) {
 				var anyVisible = false;
 				ul.querySelectorAll( '.blt-hc-item' ).forEach( function ( li ) {
@@ -346,6 +347,9 @@
 					}
 				} );
 				ul.hidden = ! anyVisible;
+				if ( anyVisible ) {
+					anyRowVisible = true;
+				}
 				var heading = ul.previousElementSibling;
 				while ( heading && ! heading.classList.contains( 'blt-hc-cat' ) ) {
 					heading = heading.previousElementSibling;
@@ -354,6 +358,10 @@
 					heading.hidden = ! anyVisible;
 				}
 			} );
+			var empty = document.querySelector( '.blt-hc-noresults' );
+			if ( empty ) {
+				empty.hidden = anyRowVisible || ! status;
+			}
 			hcFilters.forEach( function ( chip ) {
 				var on = !! status && chip.getAttribute( 'data-filter' ) === status;
 				chip.classList.toggle( 'is-active', on );
