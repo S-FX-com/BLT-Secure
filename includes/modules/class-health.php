@@ -20,6 +20,7 @@ class Blt_Secure_Health implements Blt_Secure_Module {
 	const RESULTS_OPTION = 'blt_secure_health_results';
 	const CRON_HOOK      = 'blt_secure_health_scan';
 	const AJAX_RUN       = 'blt_secure_health_run';
+	const AJAX_FIX       = 'blt_secure_health_fix';
 
 	/**
 	 * Settings.
@@ -81,6 +82,7 @@ class Blt_Secure_Health implements Blt_Secure_Module {
 
 		if ( is_admin() ) {
 			add_action( 'wp_ajax_' . self::AJAX_RUN, array( $this, 'ajax_run' ) );
+			add_action( 'wp_ajax_' . self::AJAX_FIX, array( $this, 'ajax_fix' ) );
 		}
 	}
 
@@ -170,6 +172,30 @@ class Blt_Secure_Health implements Blt_Secure_Module {
 		check_ajax_referer( 'blt_secure_cf' );
 		if ( ! current_user_can( 'manage_options' ) ) {
 			wp_send_json_error( array( 'message' => __( 'Insufficient permissions.', 'blt-secure' ) ), 403 );
+		}
+
+		$payload = $this->run_scan();
+		wp_send_json_success( $payload );
+	}
+
+	/**
+	 * AJAX: apply the automatic fix for a check, then re-scan so the results
+	 * reflect the change.
+	 *
+	 * @return void
+	 */
+	public function ajax_fix() {
+		check_ajax_referer( 'blt_secure_cf' );
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error( array( 'message' => __( 'Insufficient permissions.', 'blt-secure' ) ), 403 );
+		}
+
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- check_ajax_referer ran above.
+		$check = isset( $_POST['check'] ) ? sanitize_key( wp_unslash( $_POST['check'] ) ) : '';
+
+		$result = Blt_Secure_Health_Fixes::apply( $check, $this->options );
+		if ( is_wp_error( $result ) ) {
+			wp_send_json_error( array( 'message' => $result->get_error_message() ) );
 		}
 
 		$payload = $this->run_scan();

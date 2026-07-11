@@ -412,6 +412,7 @@ $blt_test_requires = array(
 	'includes/health/class-health-context.php',
 	'includes/health/class-health-runner.php',
 	'includes/health/class-health-checks.php',
+	'includes/health/class-health-fixes.php',
 	'includes/scanner/class-scan-whitelist.php',
 	'includes/scanner/class-core-scanner.php',
 	'includes/scanner/class-malware-scanner.php',

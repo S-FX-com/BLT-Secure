@@ -51,6 +51,7 @@ require_once BLT_SECURE_DIR . 'includes/health/class-health-result.php';
 require_once BLT_SECURE_DIR . 'includes/health/class-health-context.php';
 require_once BLT_SECURE_DIR . 'includes/health/class-health-runner.php';
 require_once BLT_SECURE_DIR . 'includes/health/class-health-checks.php';
+require_once BLT_SECURE_DIR . 'includes/health/class-health-fixes.php';
 require_once BLT_SECURE_DIR . 'includes/modules/class-health.php';
 require_once BLT_SECURE_DIR . 'includes/scanner/class-scan-whitelist.php';
 require_once BLT_SECURE_DIR . 'includes/scanner/class-core-scanner.php';
