@@ -3,7 +3,7 @@
  * Plugin Name:       BLT Secure
  * Plugin URI:        https://s-fx.com/plugins/blt-secure/
  * Description:       WordPress hardening with Cloudflare edge enforcement — login protection, 2FA, security headers, and one-click WAF deployment.
- * Version:           1.0.7
+ * Version:           1.0.8
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            S-FX.com Small Business Solutions
@@ -20,7 +20,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'BLT_SECURE_VERSION', '1.0.7' );
+define( 'BLT_SECURE_VERSION', '1.0.8' );
 define( 'BLT_SECURE_FILE', __FILE__ );
 define( 'BLT_SECURE_DIR', plugin_dir_path( __FILE__ ) );
 define( 'BLT_SECURE_URL', plugin_dir_url( __FILE__ ) );
