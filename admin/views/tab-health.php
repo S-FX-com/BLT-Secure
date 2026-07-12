@@ -42,10 +42,20 @@ $blt_secure_status_meta = array(
 					<span class="blt-hc-score-label"><?php esc_html_e( 'Security score', 'blt-secure' ); ?></span>
 				</div>
 				<ul class="blt-hc-tallies">
-					<li class="blt-hc-pass"><strong><?php echo esc_html( (int) $blt_secure_summary['pass'] ); ?></strong> <?php esc_html_e( 'Passed', 'blt-secure' ); ?></li>
-					<li class="blt-hc-warn"><strong><?php echo esc_html( (int) $blt_secure_summary['warn'] ); ?></strong> <?php esc_html_e( 'Warnings', 'blt-secure' ); ?></li>
-					<li class="blt-hc-fail"><strong><?php echo esc_html( (int) $blt_secure_summary['fail'] ); ?></strong> <?php esc_html_e( 'Failed', 'blt-secure' ); ?></li>
-					<li class="blt-hc-skip"><strong><?php echo esc_html( (int) $blt_secure_summary['skip'] ); ?></strong> <?php esc_html_e( 'Skipped', 'blt-secure' ); ?></li>
+					<?php
+					$blt_secure_tallies = array(
+						Blt_Secure_Health_Result::PASS => __( 'Passed', 'blt-secure' ),
+						Blt_Secure_Health_Result::WARN => __( 'Warnings', 'blt-secure' ),
+						Blt_Secure_Health_Result::FAIL => __( 'Failed', 'blt-secure' ),
+						Blt_Secure_Health_Result::SKIP => __( 'Skipped', 'blt-secure' ),
+					);
+					foreach ( $blt_secure_tallies as $blt_secure_tk => $blt_secure_tlabel ) :
+						$blt_secure_meta = $blt_secure_status_meta[ $blt_secure_tk ];
+						?>
+						<li class="<?php echo esc_attr( $blt_secure_meta[0] ); ?> blt-hc-filter" data-filter="<?php echo esc_attr( $blt_secure_tk ); ?>" role="button" tabindex="0" aria-pressed="false" title="<?php esc_attr_e( 'Click to show only these; click again to show all.', 'blt-secure' ); ?>">
+							<strong><?php echo esc_html( (int) $blt_secure_summary[ $blt_secure_tk ] ); ?></strong> <?php echo esc_html( $blt_secure_tlabel ); ?>
+						</li>
+					<?php endforeach; ?>
 				</ul>
 			</div>
 			<p class="blt-hc-meta">
@@ -87,8 +97,11 @@ $blt_secure_status_meta = array(
 						<?php
 						$blt_secure_st   = isset( $blt_secure_row['status'] ) ? $blt_secure_row['status'] : Blt_Secure_Health_Result::SKIP;
 						$blt_secure_meta = isset( $blt_secure_status_meta[ $blt_secure_st ] ) ? $blt_secure_status_meta[ $blt_secure_st ] : $blt_secure_status_meta[ Blt_Secure_Health_Result::SKIP ];
+						$blt_secure_cid  = isset( $blt_secure_row['id'] ) ? $blt_secure_row['id'] : '';
+						$blt_secure_can  = in_array( $blt_secure_st, array( Blt_Secure_Health_Result::WARN, Blt_Secure_Health_Result::FAIL ), true )
+							&& Blt_Secure_Health_Fixes::is_fixable( $blt_secure_cid );
 						?>
-						<li class="blt-hc-item <?php echo esc_attr( $blt_secure_meta[0] ); ?>">
+						<li class="blt-hc-item <?php echo esc_attr( $blt_secure_meta[0] ); ?>" data-status="<?php echo esc_attr( $blt_secure_st ); ?>">
 							<span class="blt-hc-icon" aria-hidden="true"><?php echo esc_html( $blt_secure_meta[1] ); ?></span>
 							<span class="blt-hc-body">
 								<span class="blt-hc-title"><?php echo esc_html( isset( $blt_secure_row['label'] ) ? $blt_secure_row['label'] : '' ); ?></span>
@@ -97,10 +110,16 @@ $blt_secure_status_meta = array(
 									<span class="blt-hc-details"><?php echo esc_html( $blt_secure_row['details'] ); ?></span>
 								<?php endif; ?>
 							</span>
+							<?php if ( $blt_secure_can ) : ?>
+								<button type="button" class="button blt-hc-fix" data-check="<?php echo esc_attr( $blt_secure_cid ); ?>">
+									<?php echo esc_html( Blt_Secure_Health_Fixes::label( $blt_secure_cid ) ); ?>
+								</button>
+							<?php endif; ?>
 						</li>
 					<?php endforeach; ?>
 				</ul>
 			<?php endforeach; ?>
+			<p class="blt-hc-noresults" hidden><?php esc_html_e( 'No checks match this filter.', 'blt-secure' ); ?></p>
 		<?php endif; ?>
 
 	<?php endif; ?>

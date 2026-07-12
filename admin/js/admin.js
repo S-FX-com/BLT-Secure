@@ -327,6 +327,93 @@
 		} );
 	}
 
+	// Health Check: filter results by status (click a tally chip to show only
+	// pass/warn/fail/skip; click the active one again to show all).
+	var hcFilters = document.querySelectorAll( '.blt-hc-filter' );
+	if ( hcFilters.length ) {
+		var hcActive = null;
+
+		var applyHealthFilter = function ( status ) {
+			hcActive = status;
+			var lists = document.querySelectorAll( '.blt-hc .blt-hc-list' );
+			var anyRowVisible = false;
+			lists.forEach( function ( ul ) {
+				var anyVisible = false;
+				ul.querySelectorAll( '.blt-hc-item' ).forEach( function ( li ) {
+					var match = ! status || li.getAttribute( 'data-status' ) === status;
+					li.hidden = ! match;
+					if ( match ) {
+						anyVisible = true;
+					}
+				} );
+				ul.hidden = ! anyVisible;
+				if ( anyVisible ) {
+					anyRowVisible = true;
+				}
+				var heading = ul.previousElementSibling;
+				while ( heading && ! heading.classList.contains( 'blt-hc-cat' ) ) {
+					heading = heading.previousElementSibling;
+				}
+				if ( heading ) {
+					heading.hidden = ! anyVisible;
+				}
+			} );
+			var empty = document.querySelector( '.blt-hc-noresults' );
+			if ( empty ) {
+				empty.hidden = anyRowVisible || ! status;
+			}
+			hcFilters.forEach( function ( chip ) {
+				var on = !! status && chip.getAttribute( 'data-filter' ) === status;
+				chip.classList.toggle( 'is-active', on );
+				chip.setAttribute( 'aria-pressed', on ? 'true' : 'false' );
+			} );
+		};
+
+		var toggleHealthFilter = function ( chip ) {
+			var status = chip.getAttribute( 'data-filter' );
+			applyHealthFilter( hcActive === status ? null : status );
+		};
+
+		hcFilters.forEach( function ( chip ) {
+			chip.addEventListener( 'click', function () {
+				toggleHealthFilter( chip );
+			} );
+			chip.addEventListener( 'keydown', function ( event ) {
+				if ( 'Enter' === event.key || ' ' === event.key || 'Spacebar' === event.key ) {
+					event.preventDefault();
+					toggleHealthFilter( chip );
+				}
+			} );
+		} );
+	}
+
+	// Health Check: one-click fixes. Apply the remediation server-side, then
+	// reload so the score, tallies, and results re-render from the fresh scan.
+	document.querySelectorAll( '.blt-hc-fix' ).forEach( function ( btn ) {
+		btn.addEventListener( 'click', function () {
+			var original = btn.textContent;
+			btn.disabled = true;
+			btn.textContent = cfg.i18n.working;
+			post( 'blt_secure_health_fix', { check: btn.getAttribute( 'data-check' ) } ).then( function ( json ) {
+				if ( json.success ) {
+					window.location.reload();
+				} else {
+					btn.disabled = false;
+					btn.textContent = ( json.data && json.data.message ) || cfg.i18n.error;
+					setTimeout( function () {
+						btn.textContent = original;
+					}, 3000 );
+				}
+			} ).catch( function () {
+				btn.disabled = false;
+				btn.textContent = cfg.i18n.error;
+				setTimeout( function () {
+					btn.textContent = original;
+				}, 3000 );
+			} );
+		} );
+	} );
+
 	// Whitelist: ignore / restore scanner findings (event-delegated so it
 	// works for every finding row across all three scanner sections). Reload
 	// on success so the section scoreboard, notices, and "Ignored findings"
