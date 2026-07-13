@@ -427,10 +427,10 @@
 				window.location.reload();
 			} else {
 				btn.disabled = false;
-				btn.textContent = cfg.i18n.error;
+				btn.textContent = ( json.data && json.data.message ) || cfg.i18n.error;
 				setTimeout( function () {
 					btn.textContent = original;
-				}, 2500 );
+				}, 4000 );
 			}
 		} ).catch( function () {
 			btn.disabled = false;
@@ -460,6 +460,19 @@
 			event.preventDefault();
 			whitelistAction( restoreBtn, 'blt_secure_whitelist_remove', {
 				fingerprint: restoreBtn.getAttribute( 'data-fp' )
+			} );
+			return;
+		}
+		// Malware finding: delete the flagged file after an explicit confirm.
+		var deleteBtn = event.target.closest( '.blt-mw-delete' );
+		if ( deleteBtn ) {
+			event.preventDefault();
+			var path = deleteBtn.getAttribute( 'data-path' ) || '';
+			if ( ! window.confirm( cfg.i18n.confirmDelete.replace( '%s', path ) ) ) {
+				return;
+			}
+			whitelistAction( deleteBtn, 'blt_secure_malware_delete', {
+				fingerprint: deleteBtn.getAttribute( 'data-fp' )
 			} );
 		}
 	} );

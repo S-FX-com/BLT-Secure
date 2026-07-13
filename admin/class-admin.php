@@ -38,6 +38,13 @@ class Blt_Secure_Admin {
 	private $cf_state;
 
 	/**
+	 * Hook suffixes of our registered admin pages (top-level + submenus).
+	 *
+	 * @var string[]
+	 */
+	private $page_hooks = array();
+
+	/**
 	 * Constructor.
 	 *
 	 * @param Blt_Secure $plugin Plugin core.
@@ -68,12 +75,43 @@ class Blt_Secure_Admin {
 	}
 
 	/**
-	 * Menu entry.
+	 * The tabs, in display order. Shared by the left submenu, the on-page tab
+	 * bar, and render_page() validation.
+	 *
+	 * @return array<string,string> slug => label.
+	 */
+	public function tabs() {
+		return array(
+			'health'     => __( 'Health Check', 'blt-secure' ),
+			'scanner'    => __( 'Scanner', 'blt-secure' ),
+			'hardening'  => __( 'Hardening', 'blt-secure' ),
+			'login'      => __( 'Login', 'blt-secure' ),
+			'timeline'   => __( 'Timeline', 'blt-secure' ),
+			'cloudflare' => __( 'Cloudflare', 'blt-secure' ),
+			'advanced'   => __( 'Advanced', 'blt-secure' ),
+		);
+	}
+
+	/**
+	 * Admin URL for a tab. The default tab lives on the plain plugin slug so
+	 * old bookmarks keep working; every other tab is its own submenu page so
+	 * the left menu highlights it.
+	 *
+	 * @param string $tab Tab slug.
+	 * @return string
+	 */
+	public static function tab_url( $tab ) {
+		$page = 'health' === $tab ? 'blt-secure' : 'blt-secure-' . $tab;
+		return admin_url( 'admin.php?page=' . $page );
+	}
+
+	/**
+	 * Menu entries: the top-level page plus one submenu item per tab.
 	 *
 	 * @return void
 	 */
 	public function register_menu() {
-		add_menu_page(
+		$this->page_hooks[] = add_menu_page(
 			__( 'BLT Secure', 'blt-secure' ),
 			__( 'BLT Secure', 'blt-secure' ),
 			'manage_options',
@@ -82,6 +120,18 @@ class Blt_Secure_Admin {
 			'dashicons-shield-alt',
 			81
 		);
+
+		foreach ( $this->tabs() as $blt_slug => $blt_label ) {
+			$page               = 'health' === $blt_slug ? 'blt-secure' : 'blt-secure-' . $blt_slug;
+			$this->page_hooks[] = add_submenu_page(
+				'blt-secure',
+				$blt_label,
+				$blt_label,
+				'manage_options',
+				$page,
+				array( $this, 'render_page' )
+			);
+		}
 	}
 
 	/**
@@ -163,7 +213,7 @@ class Blt_Secure_Admin {
 	 * @return void
 	 */
 	public function enqueue_assets( $hook ) {
-		if ( 'toplevel_page_blt-secure' !== $hook ) {
+		if ( ! in_array( $hook, $this->page_hooks, true ) ) {
 			return;
 		}
 
@@ -176,18 +226,20 @@ class Blt_Secure_Admin {
 				'ajaxUrl' => admin_url( 'admin-ajax.php' ),
 				'nonce'   => wp_create_nonce( 'blt_secure_cf' ),
 				'i18n'    => array(
-					'working'   => __( 'Working…', 'blt-secure' ),
-					'deployed'  => __( 'Deployed', 'blt-secure' ),
-					'removed'   => __( 'Not deployed', 'blt-secure' ),
-					'error'     => __( 'Error', 'blt-secure' ),
-					'scanning'  => __( 'Running checks…', 'blt-secure' ),
-					'scanError' => __( 'The scan could not be completed.', 'blt-secure' ),
-					'coreScan'  => __( 'Scanning core files…', 'blt-secure' ),
-					'malScan'   => __( 'Scanning wp-content for malware…', 'blt-secure' ),
-					'iocSync'   => __( 'Syncing threat-intel feeds…', 'blt-secure' ),
-					'polling'   => __( 'Polling Cloudflare…', 'blt-secure' ),
-					'baseScan'  => __( 'Checking plugin/theme integrity…', 'blt-secure' ),
-					'reporting' => __( 'Reporting to dashboard…', 'blt-secure' ),
+					'working'       => __( 'Working…', 'blt-secure' ),
+					'deployed'      => __( 'Deployed', 'blt-secure' ),
+					'removed'       => __( 'Not deployed', 'blt-secure' ),
+					'error'         => __( 'Error', 'blt-secure' ),
+					'scanning'      => __( 'Running checks…', 'blt-secure' ),
+					'scanError'     => __( 'The scan could not be completed.', 'blt-secure' ),
+					'coreScan'      => __( 'Scanning core files…', 'blt-secure' ),
+					'malScan'       => __( 'Scanning wp-content for malware…', 'blt-secure' ),
+					'iocSync'       => __( 'Syncing threat-intel feeds…', 'blt-secure' ),
+					'polling'       => __( 'Polling Cloudflare…', 'blt-secure' ),
+					'baseScan'      => __( 'Checking plugin/theme integrity…', 'blt-secure' ),
+					'reporting'     => __( 'Reporting to dashboard…', 'blt-secure' ),
+					/* translators: %s: file path */
+					'confirmDelete' => __( 'Permanently delete "%s" from the server? This cannot be undone.', 'blt-secure' ),
 				),
 			)
 		);
@@ -206,7 +258,7 @@ class Blt_Secure_Admin {
 			'<div class="notice notice-error"><p><strong>%s</strong> %s <a href="%s">%s</a></p></div>',
 			esc_html__( 'BLT Secure:', 'blt-secure' ),
 			esc_html__( 'the WordPress security keys changed, so the stored credentials (Cloudflare token, GitHub updates token, Slack webhook) could not be decrypted and were removed. Those features are paused until you re-enter them.', 'blt-secure' ),
-			esc_url( admin_url( 'admin.php?page=blt-secure&tab=cloudflare' ) ),
+			esc_url( self::tab_url( 'cloudflare' ) ),
 			esc_html__( 'Re-enter tokens', 'blt-secure' )
 		);
 	}
@@ -233,7 +285,7 @@ class Blt_Secure_Admin {
 
 		$on_updates_screen = in_array( $pagenow, array( 'plugins.php', 'update-core.php' ), true );
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended
-		$on_our_screen = 'admin.php' === $pagenow && isset( $_GET['page'] ) && 'blt-secure' === $_GET['page'];
+		$on_our_screen = 'admin.php' === $pagenow && isset( $_GET['page'] ) && 0 === strpos( sanitize_key( wp_unslash( $_GET['page'] ) ), 'blt-secure' );
 		if ( ! $on_updates_screen && ! $on_our_screen ) {
 			return;
 		}
@@ -246,7 +298,7 @@ class Blt_Secure_Admin {
 			'<div class="notice notice-warning"><p><strong>%s</strong> %s <a href="%s">%s</a></p></div>',
 			esc_html__( 'BLT Secure:', 'blt-secure' ),
 			esc_html__( 'plugin updates cannot be checked — no GitHub access token is configured. Add one on the Advanced tab, or define BLT_SECURE_GITHUB_TOKEN in wp-config.php.', 'blt-secure' ),
-			esc_url( admin_url( 'admin.php?page=blt-secure&tab=advanced' ) ),
+			esc_url( self::tab_url( 'advanced' ) ),
 			esc_html__( 'Add token', 'blt-secure' )
 		);
 	}
@@ -261,19 +313,19 @@ class Blt_Secure_Admin {
 			return;
 		}
 
-		// phpcs:ignore WordPress.Security.NonceVerification.Recommended
-		$tab  = isset( $_GET['tab'] ) ? sanitize_key( wp_unslash( $_GET['tab'] ) ) : 'hardening';
-		$tabs = array(
-			'hardening'  => __( 'Hardening', 'blt-secure' ),
-			'login'      => __( 'Login', 'blt-secure' ),
-			'health'     => __( 'Health Check', 'blt-secure' ),
-			'scanner'    => __( 'Scanner', 'blt-secure' ),
-			'timeline'   => __( 'Timeline', 'blt-secure' ),
-			'cloudflare' => __( 'Cloudflare', 'blt-secure' ),
-			'advanced'   => __( 'Advanced', 'blt-secure' ),
-		);
+		// The tab comes from the submenu page slug (blt-secure-{tab}); the
+		// plain slug honors ?tab= so pre-submenu bookmarks keep working.
+		// phpcs:disable WordPress.Security.NonceVerification.Recommended
+		$page = isset( $_GET['page'] ) ? sanitize_key( wp_unslash( $_GET['page'] ) ) : '';
+		$tab  = isset( $_GET['tab'] ) ? sanitize_key( wp_unslash( $_GET['tab'] ) ) : 'health';
+		// phpcs:enable WordPress.Security.NonceVerification.Recommended
+		if ( 0 === strpos( $page, 'blt-secure-' ) ) {
+			$tab = substr( $page, strlen( 'blt-secure-' ) );
+		}
+
+		$tabs = $this->tabs();
 		if ( ! isset( $tabs[ $tab ] ) ) {
-			$tab = 'hardening';
+			$tab = 'health';
 		}
 
 		$options   = $this->plugin->options;

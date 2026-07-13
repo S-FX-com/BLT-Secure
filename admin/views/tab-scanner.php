@@ -208,7 +208,10 @@ $blt_secure_sev_class = array(
 								<span class="blt-hc-details"><code><?php echo esc_html( $blt_secure_find['snippet'] ); ?></code></span>
 							<?php endif; ?>
 						</span>
-						<?php blt_secure_ignore_button( 'malware', isset( $blt_secure_find['fingerprint'] ) ? $blt_secure_find['fingerprint'] : '', $blt_secure_path . ' — ' . $blt_secure_desc ); ?>
+						<span class="blt-hc-actions">
+							<?php blt_secure_ignore_button( 'malware', isset( $blt_secure_find['fingerprint'] ) ? $blt_secure_find['fingerprint'] : '', $blt_secure_path . ' — ' . $blt_secure_desc ); ?>
+							<?php blt_secure_delete_button( isset( $blt_secure_find['fingerprint'] ) ? $blt_secure_find['fingerprint'] : '', $blt_secure_path ); ?>
+						</span>
 					</li>
 				<?php endforeach; ?>
 			</ul>
@@ -332,5 +335,77 @@ $blt_secure_sev_class = array(
 		}
 		?>
 
+	<?php endif; ?>
+
+	<hr style="margin:32px 0;" />
+
+	<h2 class="blt-hc-cat"><?php esc_html_e( 'Ignore list', 'blt-secure' ); ?></h2>
+	<p class="description">
+		<?php esc_html_e( 'Everything ignored across all scanners, including findings that no longer appear in the latest scan results. Restoring an entry makes the finding count again the next time it is detected.', 'blt-secure' ); ?>
+	</p>
+
+	<?php
+	$blt_secure_wl_entries = $whitelist->all();
+	uasort(
+		$blt_secure_wl_entries,
+		static function ( $a, $b ) {
+			$ta = isset( $a['time'] ) ? (int) $a['time'] : 0;
+			$tb = isset( $b['time'] ) ? (int) $b['time'] : 0;
+			return $tb <=> $ta;
+		}
+	);
+	$blt_secure_wl_scanners = array(
+		'core'     => __( 'Core files', 'blt-secure' ),
+		'malware'  => __( 'Malware', 'blt-secure' ),
+		'baseline' => __( 'Plugin & theme integrity', 'blt-secure' ),
+	);
+	?>
+
+	<?php if ( empty( $blt_secure_wl_entries ) ) : ?>
+		<div class="blt-hc-scoreboard blt-hc-empty">
+			<p><?php esc_html_e( 'Nothing has been ignored. Use the “Ignore” button on a finding to acknowledge it.', 'blt-secure' ); ?></p>
+		</div>
+	<?php else : ?>
+		<table class="widefat striped blt-wl-table">
+			<thead>
+				<tr>
+					<th scope="col"><?php esc_html_e( 'Finding', 'blt-secure' ); ?></th>
+					<th scope="col"><?php esc_html_e( 'Scanner', 'blt-secure' ); ?></th>
+					<th scope="col"><?php esc_html_e( 'Ignored', 'blt-secure' ); ?></th>
+					<th scope="col"><span class="screen-reader-text"><?php esc_html_e( 'Actions', 'blt-secure' ); ?></span></th>
+				</tr>
+			</thead>
+			<tbody>
+				<?php foreach ( $blt_secure_wl_entries as $blt_secure_wl_fp => $blt_secure_wl_entry ) : ?>
+					<?php
+					$blt_secure_wl_label   = isset( $blt_secure_wl_entry['label'] ) && '' !== $blt_secure_wl_entry['label'] ? $blt_secure_wl_entry['label'] : $blt_secure_wl_fp;
+					$blt_secure_wl_scanner = isset( $blt_secure_wl_entry['scanner'] ) ? $blt_secure_wl_entry['scanner'] : '';
+					$blt_secure_wl_time    = isset( $blt_secure_wl_entry['time'] ) ? (int) $blt_secure_wl_entry['time'] : 0;
+					$blt_secure_wl_user    = isset( $blt_secure_wl_entry['user'] ) ? get_userdata( (int) $blt_secure_wl_entry['user'] ) : false;
+					?>
+					<tr>
+						<td><code><?php echo esc_html( $blt_secure_wl_label ); ?></code></td>
+						<td><?php echo esc_html( isset( $blt_secure_wl_scanners[ $blt_secure_wl_scanner ] ) ? $blt_secure_wl_scanners[ $blt_secure_wl_scanner ] : $blt_secure_wl_scanner ); ?></td>
+						<td>
+							<?php
+							if ( $blt_secure_wl_time > 0 ) {
+								echo esc_html( date_i18n( get_option( 'date_format' ), $blt_secure_wl_time ) );
+							}
+							if ( $blt_secure_wl_user ) {
+								printf(
+									/* translators: %s: user display name */
+									' ' . esc_html__( 'by %s', 'blt-secure' ),
+									esc_html( $blt_secure_wl_user->display_name )
+								);
+							}
+							?>
+						</td>
+						<td>
+							<button type="button" class="button-link blt-wl-restore" data-fp="<?php echo esc_attr( $blt_secure_wl_fp ); ?>"><?php esc_html_e( 'Restore', 'blt-secure' ); ?></button>
+						</td>
+					</tr>
+				<?php endforeach; ?>
+			</tbody>
+		</table>
 	<?php endif; ?>
 </div>

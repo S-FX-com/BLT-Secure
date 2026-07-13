@@ -101,6 +101,28 @@ if ( ! function_exists( 'blt_secure_ignore_button' ) ) {
 	}
 }
 
+if ( ! function_exists( 'blt_secure_delete_button' ) ) {
+	/**
+	 * Echo a "Delete file" button for a malware finding. The JS handler asks
+	 * for confirmation, then deletes the flagged file server-side.
+	 *
+	 * @param string $fingerprint Finding fingerprint.
+	 * @param string $path        File path shown in the confirmation prompt.
+	 * @return void
+	 */
+	function blt_secure_delete_button( $fingerprint, $path ) {
+		if ( '' === (string) $fingerprint ) {
+			return;
+		}
+		printf(
+			'<button type="button" class="button-link button-link-delete blt-mw-delete" data-fp="%1$s" data-path="%2$s">%3$s</button>',
+			esc_attr( $fingerprint ),
+			esc_attr( $path ),
+			esc_html__( 'Delete file', 'blt-secure' )
+		);
+	}
+}
+
 if ( ! function_exists( 'blt_secure_ignored_details' ) ) {
 	/**
 	 * Echo a collapsed "Ignored findings" panel with a Restore button per item.
