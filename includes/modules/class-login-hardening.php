@@ -81,6 +81,7 @@ class Blt_Secure_Login_Hardening implements Blt_Secure_Module {
 	public function defaults() {
 		return array(
 			'slug'            => '',
+			'backup_key'      => '',
 			'lockout_enabled' => true,
 			'max_attempts'    => 5,
 			'lockout_minutes' => 15,
@@ -143,18 +144,49 @@ class Blt_Secure_Login_Hardening implements Blt_Secure_Module {
 			$slug = '';
 		}
 
+		$current_slug = isset( $current['slug'] ) ? (string) $current['slug'] : '';
+		$current_key  = isset( $current['backup_key'] ) ? (string) $current['backup_key'] : '';
+
 		$new = array(
 			'slug'            => $slug,
+			'backup_key'      => self::next_backup_key( $slug, $current_slug, $current_key ),
 			'lockout_enabled' => ! empty( $input['lockout_enabled'] ),
 			'max_attempts'    => min( 20, max( 3, absint( isset( $input['max_attempts'] ) ? $input['max_attempts'] : 5 ) ) ),
 			'lockout_minutes' => min( 1440, max( 5, absint( isset( $input['lockout_minutes'] ) ? $input['lockout_minutes'] : 15 ) ) ),
 		);
 
-		if ( $slug && ( ! isset( $current['slug'] ) || $current['slug'] !== $slug ) ) {
-			$this->announce_new_slug( $slug );
+		if ( $slug && $current_slug !== $slug ) {
+			$this->announce_new_slug( $slug, $new['backup_key'] );
 		}
 
 		return $new;
+	}
+
+	/**
+	 * Decide the backup-access key for a settings save: keep the existing key
+	 * while the slug is unchanged, mint a fresh one whenever the slug is set
+	 * or changed. The key only ever reveals the login *screen* (it is no
+	 * authentication bypass), so it lives in the settings option.
+	 *
+	 * Pure function (unit-tested).
+	 *
+	 * @param string $slug         Newly saved slug ('' = feature off).
+	 * @param string $current_slug Previously saved slug.
+	 * @param string $current_key  Previously saved key.
+	 * @return string
+	 */
+	public static function next_backup_key( $slug, $current_slug, $current_key ) {
+		if ( '' === (string) $slug ) {
+			return '';
+		}
+		if ( '' !== (string) $current_key && (string) $slug === (string) $current_slug ) {
+			return (string) $current_key;
+		}
+		try {
+			return bin2hex( random_bytes( 16 ) );
+		} catch ( \Exception $e ) {
+			return ''; // No CSPRNG available — better no backup URL than a weak one.
+		}
 	}
 
 	// -------------------------------------------------------------------
@@ -288,6 +320,29 @@ class Blt_Secure_Login_Hardening implements Blt_Secure_Module {
 	}
 
 	/**
+	 * The stored backup-access key ('' when none).
+	 *
+	 * @return string
+	 */
+	public function backup_key() {
+		return (string) $this->options->get( 'login', 'backup_key', '' );
+	}
+
+	/**
+	 * The backup-access URL, or '' when the slug feature is off or no key
+	 * exists.
+	 *
+	 * @return string
+	 */
+	public function backup_url() {
+		$key = $this->backup_key();
+		if ( '' === $key || '' === $this->active_slug() ) {
+			return '';
+		}
+		return add_query_arg( 'blt_secure_key', $key, home_url( '/' ) );
+	}
+
+	/**
 	 * Classify the current request: custom slug, blocked original, or other.
 	 * Runs during plugins_loaded — before wp-login.php gets going.
 	 *
@@ -295,6 +350,17 @@ class Blt_Secure_Login_Hardening implements Blt_Secure_Module {
 	 */
 	private function intercept_request() {
 		if ( php_sapi_name() === 'cli' || defined( 'WP_CLI' ) ) {
+			return;
+		}
+
+		// Backup access URL: the correct key serves the login screen even if
+		// the slug is forgotten. It reveals the login form only — every
+		// credential still goes through the normal authentication path.
+		$key = $this->backup_key();
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- secret-key comparison, not a form action.
+		$given = isset( $_GET['blt_secure_key'] ) ? sanitize_text_field( wp_unslash( $_GET['blt_secure_key'] ) ) : '';
+		if ( '' !== $key && '' !== $given && hash_equals( $key, $given ) ) {
+			$this->is_slug_request = true;
 			return;
 		}
 
@@ -465,24 +531,41 @@ class Blt_Secure_Login_Hardening implements Blt_Secure_Module {
 	}
 
 	/**
-	 * On slug change: admin notice + email so the owner always has the URL.
+	 * On slug change: admin notice + email so the owner always has the URL
+	 * (and the backup-access URL that finds it again if the slug is lost).
 	 *
-	 * @param string $slug New slug.
+	 * @param string $slug       New slug.
+	 * @param string $backup_key Backup-access key ('' = none).
 	 * @return void
 	 */
-	private function announce_new_slug( $slug ) {
-		$login_url = home_url( '/' . $slug );
+	private function announce_new_slug( $slug, $backup_key = '' ) {
+		$login_url  = home_url( '/' . $slug );
+		$backup_url = '' !== $backup_key ? add_query_arg( 'blt_secure_key', $backup_key, home_url( '/' ) ) : '';
 
 		add_settings_error(
 			'blt_secure_settings',
 			'blt_secure_new_slug',
 			sprintf(
 				/* translators: %s: new login URL */
-				__( 'Your login URL is now: %s — bookmark it. If you ever get locked out, add define( \'BLT_SECURE_DISABLE_SLUG\', true ); to wp-config.php.', 'blt-secure' ),
+				__( 'Your login URL is now: %s — bookmark it, and save the backup access URL shown below the slug field. If you ever get locked out, add define( \'BLT_SECURE_DISABLE_SLUG\', true ); to wp-config.php.', 'blt-secure' ),
 				'<code>' . esc_url( $login_url ) . '</code>'
 			),
 			'success'
 		);
+
+		$body = sprintf(
+			/* translators: 1: new login URL, 2: escape hatch code */
+			__( "BLT Secure changed this site's login URL to: %1\$s\n\nIf you are ever locked out, add this line to wp-config.php to restore the default login URL:\n\n%2\$s\n", 'blt-secure' ),
+			$login_url,
+			"define( 'BLT_SECURE_DISABLE_SLUG', true );"
+		);
+		if ( '' !== $backup_url ) {
+			$body .= "\n" . sprintf(
+				/* translators: %s: backup access URL */
+				__( "Backup access URL (opens the login screen if you forget the slug — keep it private):\n\n%s\n", 'blt-secure' ),
+				$backup_url
+			);
+		}
 
 		wp_mail(
 			get_option( 'admin_email' ),
@@ -491,12 +574,7 @@ class Blt_Secure_Login_Hardening implements Blt_Secure_Module {
 				__( '[%s] Your login URL changed', 'blt-secure' ),
 				wp_specialchars_decode( get_option( 'blogname' ), ENT_QUOTES )
 			),
-			sprintf(
-				/* translators: 1: new login URL, 2: escape hatch code */
-				__( "BLT Secure changed this site's login URL to: %1\$s\n\nIf you are ever locked out, add this line to wp-config.php to restore the default login URL:\n\n%2\$s\n", 'blt-secure' ),
-				$login_url,
-				"define( 'BLT_SECURE_DISABLE_SLUG', true );"
-			)
+			$body
 		);
 	}
 }

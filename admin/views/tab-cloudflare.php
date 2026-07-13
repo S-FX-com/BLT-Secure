@@ -61,22 +61,57 @@ $blt_secure_connected = $blt_secure_has_token && ! empty( $blt_secure_zone['zone
 		<h2><?php esc_html_e( 'Edge protections', 'blt-secure' ); ?></h2>
 		<?php if ( ! $blt_secure_connected ) : ?>
 			<p class="description"><?php esc_html_e( 'Connect a token above to enable one-click deployment.', 'blt-secure' ); ?></p>
+		<?php else : ?>
+			<p class="blt-deploy-all-row">
+				<button type="button" class="button button-primary" id="blt-cf-deploy-all"><?php esc_html_e( 'Deploy all protections', 'blt-secure' ); ?></button>
+				<span id="blt-cf-deploy-all-status" class="description"></span>
+			</p>
+			<p class="description" style="max-width:720px;">
+				<?php esc_html_e( 'One click deploys every card below with its current settings. Cloudflare Access is excluded (deploy it separately — it changes how you sign in), and country blocking is skipped until you list countries on its card.', 'blt-secure' ); ?>
+			</p>
 		<?php endif; ?>
 
 		<div class="blt-cards">
 			<?php
 			$blt_secure_login_slug = (string) $options->get( 'login', 'slug', '' );
+
+			// The country card renders what is live at the edge: the deployer's
+			// deployment record carries the deployed selection (settings can't —
+			// the Settings API sanitizer owns that option and drops this section).
+			$blt_secure_cb_record  = $cf_state->deployment( 'country_block' );
+			$blt_secure_countries  = ( is_array( $blt_secure_cb_record ) && isset( $blt_secure_cb_record['countries'] ) && is_array( $blt_secure_cb_record['countries'] ) ) ? $blt_secure_cb_record['countries'] : array();
+			$blt_secure_login_only = is_array( $blt_secure_cb_record ) && ! empty( $blt_secure_cb_record['login_only'] );
+
 			foreach ( $admin->cf_cards() as $blt_secure_feature => $blt_secure_card ) :
-				$blt_secure_record   = $cf_state->deployment( $blt_secure_feature );
-				$blt_secure_deployed = null !== $blt_secure_record;
-				$blt_secure_stale    = false;
+				$blt_secure_record    = $cf_state->deployment( $blt_secure_feature );
+				$blt_secure_deployed  = null !== $blt_secure_record;
+				$blt_secure_stale     = false;
+				$blt_secure_stale_msg = '';
 				if ( $blt_secure_deployed && 'rate_limit' === $blt_secure_feature ) {
-					$blt_secure_stale = $cf_state->is_stale( 'rate_limit', Blt_Secure_Rule_Definitions::config_hash( Blt_Secure_Rule_Definitions::rate_limit_rules( $blt_secure_login_slug ) ) );
+					$blt_secure_stale     = $cf_state->is_stale( 'rate_limit', Blt_Secure_Rule_Definitions::config_hash( Blt_Secure_Rule_Definitions::rate_limit_rules( $blt_secure_login_slug ) ) );
+					$blt_secure_stale_msg = __( 'Your login slug changed since this rule was deployed — redeploy to update it.', 'blt-secure' );
+				}
+				if ( $blt_secure_deployed && 'country_block' === $blt_secure_feature && ! empty( $blt_secure_countries ) ) {
+					$blt_secure_stale     = $cf_state->is_stale( 'country_block', Blt_Secure_Rule_Definitions::config_hash( Blt_Secure_Rule_Definitions::country_block_rules( $blt_secure_countries, $blt_secure_login_only, $blt_secure_login_slug ) ) );
+					$blt_secure_stale_msg = __( 'Your login slug changed since this rule was deployed — redeploy to update it.', 'blt-secure' );
 				}
 				?>
 				<div class="blt-card" data-feature="<?php echo esc_attr( $blt_secure_feature ); ?>">
 					<h3><?php echo esc_html( $blt_secure_card['title'] ); ?></h3>
 					<p><?php echo esc_html( $blt_secure_card['desc'] ); ?></p>
+
+					<?php if ( 'country_block' === $blt_secure_feature ) : ?>
+						<p class="blt-country-controls">
+							<label for="blt-countries-input"><?php esc_html_e( 'Countries to block (two-letter ISO codes, comma-separated):', 'blt-secure' ); ?></label><br />
+							<input type="text" id="blt-countries-input" class="blt-countries regular-text" value="<?php echo esc_attr( implode( ', ', $blt_secure_countries ) ); ?>" placeholder="<?php esc_attr_e( 'e.g. CN, RU, KP', 'blt-secure' ); ?>" />
+						</p>
+						<p class="blt-country-controls">
+							<label>
+								<input type="checkbox" class="blt-country-login-only" <?php checked( $blt_secure_login_only ); ?> />
+								<?php esc_html_e( 'Only block the login endpoints (visitors from these countries can still view the site)', 'blt-secure' ); ?>
+							</label>
+						</p>
+					<?php endif; ?>
 
 					<?php if ( 'waf_managed' === $blt_secure_feature ) : ?>
 						<p class="blt-waf-controls">
@@ -100,7 +135,7 @@ $blt_secure_connected = $blt_secure_has_token && ! empty( $blt_secure_zone['zone
 					<p class="blt-card-status">
 						<?php if ( $blt_secure_stale ) : ?>
 							<span class="blt-badge blt-badge-warn"><?php esc_html_e( 'Update available', 'blt-secure' ); ?></span>
-							<em><?php esc_html_e( 'Your login slug changed since this rule was deployed — redeploy to update it.', 'blt-secure' ); ?></em>
+							<em><?php echo esc_html( $blt_secure_stale_msg ); ?></em>
 						<?php elseif ( $blt_secure_deployed ) : ?>
 							<span class="blt-badge blt-badge-ok"><?php esc_html_e( 'Deployed', 'blt-secure' ); ?></span>
 							<?php if ( isset( $blt_secure_record['tier'] ) && 'free' === $blt_secure_record['tier'] ) : ?>

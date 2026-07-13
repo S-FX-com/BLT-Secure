@@ -114,4 +114,32 @@ class Test_Lockout extends TestCase {
 	public function test_empty_username_passthrough() {
 		$this->assertNull( $this->module->check_lockout( null, '' ) );
 	}
+
+	// -------------------------------------------------------------------
+	// Backup-access key (pure key-rotation policy).
+	// -------------------------------------------------------------------
+
+	public function test_backup_key_empty_when_slug_off() {
+		$this->assertSame( '', Blt_Secure_Login_Hardening::next_backup_key( '', 'old-slug', 'existingkey' ) );
+	}
+
+	public function test_backup_key_generated_when_slug_first_set() {
+		$key = Blt_Secure_Login_Hardening::next_backup_key( 'my-login', '', '' );
+		$this->assertMatchesRegularExpression( '/^[a-f0-9]{32}$/', $key );
+	}
+
+	public function test_backup_key_kept_while_slug_unchanged() {
+		$this->assertSame( 'existingkey', Blt_Secure_Login_Hardening::next_backup_key( 'my-login', 'my-login', 'existingkey' ) );
+	}
+
+	public function test_backup_key_rotated_when_slug_changes() {
+		$key = Blt_Secure_Login_Hardening::next_backup_key( 'new-login', 'my-login', 'existingkey' );
+		$this->assertNotSame( 'existingkey', $key );
+		$this->assertMatchesRegularExpression( '/^[a-f0-9]{32}$/', $key );
+	}
+
+	public function test_backup_key_generated_when_missing_even_if_slug_unchanged() {
+		$key = Blt_Secure_Login_Hardening::next_backup_key( 'my-login', 'my-login', '' );
+		$this->assertMatchesRegularExpression( '/^[a-f0-9]{32}$/', $key );
+	}
 }

@@ -113,6 +113,56 @@ class Test_Cf_Payloads extends TestCase {
 		$this->assertSame( $a, Blt_Secure_Rule_Definitions::config_hash( array( 'x' => 1 ) ) );
 		$this->assertNotSame( $a, Blt_Secure_Rule_Definitions::config_hash( array( 'x' => 2 ) ) );
 	}
+
+	public function test_sanitize_country_codes() {
+		// String input: mixed case, mixed separators, dupes, invalid entries.
+		$this->assertSame(
+			array( 'CN', 'KP', 'RU' ),
+			Blt_Secure_Rule_Definitions::sanitize_country_codes( 'cn, RU kp,ru,, xyz, 1' )
+		);
+		// Array input.
+		$this->assertSame(
+			array( 'DE', 'FR' ),
+			Blt_Secure_Rule_Definitions::sanitize_country_codes( array( 'fr', 'DE', 'not-a-code', array( 'CN' ) ) )
+		);
+		// Cloudflare's Tor pseudo-country is a valid target.
+		$this->assertSame( array( 'T1' ), Blt_Secure_Rule_Definitions::sanitize_country_codes( 't1' ) );
+		// Junk in, nothing out.
+		$this->assertSame( array(), Blt_Secure_Rule_Definitions::sanitize_country_codes( '<script>, USA, 12' ) );
+		$this->assertSame( array(), Blt_Secure_Rule_Definitions::sanitize_country_codes( 42 ) );
+	}
+
+	public function test_country_block_rule_site_wide() {
+		$rules = Blt_Secure_Rule_Definitions::country_block_rules( array( 'RU', 'CN' ) );
+		$rule  = $rules['countries'];
+
+		$this->assertSame( '(ip.src.country in {"CN" "RU"})', $rule['expression'] );
+		$this->assertSame( 'block', $rule['action'] );
+		$this->assertSame( 'blt-secure-country-block', $rule['ref'] );
+		$this->assertStringStartsWith( '[BLT Secure]', $rule['description'] );
+		$this->assertTrue( $rule['enabled'] );
+	}
+
+	public function test_country_block_rule_login_only() {
+		$rules = Blt_Secure_Rule_Definitions::country_block_rules( array( 'CN' ), true, 'secret-door' );
+		$rule  = $rules['countries'];
+
+		$this->assertSame(
+			'((ip.src.country in {"CN"}) and (http.request.uri.path eq "/wp-login.php" or http.request.uri.path eq "/xmlrpc.php" or http.request.uri.path eq "/secret-door"))',
+			$rule['expression']
+		);
+
+		// Without a slug: only the two default endpoints.
+		$default = Blt_Secure_Rule_Definitions::country_block_rules( array( 'CN' ), true );
+		$this->assertStringNotContainsString( 'secret-door', $default['countries']['expression'] );
+		$this->assertStringContainsString( '/xmlrpc.php', $default['countries']['expression'] );
+	}
+
+	public function test_country_block_rule_sanitizes_inline() {
+		// Codes arriving unsanitized (e.g. straight from a filter) are cleaned.
+		$rules = Blt_Secure_Rule_Definitions::country_block_rules( array( 'cn', '"});bad', 'RU' ) );
+		$this->assertSame( '(ip.src.country in {"CN" "RU"})', $rules['countries']['expression'] );
+	}
 }
 
 /**
@@ -397,6 +447,76 @@ class Test_Cf_Deployer extends TestCase {
 		// State persisted with all three ids.
 		$this->assertSame( array( 'asn' => 'r-asn', 'tor' => 'r-tor', 'paths' => 'r-paths' ), $record['rule_ids'] );
 		$this->assertNotNull( $state->deployment( 'custom_pack' ) );
+	}
+
+	public function test_country_block_requires_a_selection() {
+		$log      = array();
+		$deployer = new Blt_Secure_Cloudflare_Deployer(
+			new Blt_Secure_Cloudflare_Api( 'tok', $this->scripted_transport( array(), $log ) ),
+			$this->connected_state()
+		);
+
+		$result = $deployer->deploy( 'country_block', array( 'countries' => array() ) );
+		$this->assertInstanceOf( WP_Error::class, $result );
+		$this->assertSame( 'blt_cf_validation', $result->get_error_code() );
+		$this->assertSame( array(), $log, 'No HTTP calls should happen with an empty selection' );
+
+		// Junk-only input degrades to empty and is refused the same way.
+		$result = $deployer->deploy( 'country_block', array( 'countries' => array( 'USA', '12' ) ) );
+		$this->assertInstanceOf( WP_Error::class, $result );
+		$this->assertSame( 'blt_cf_validation', $result->get_error_code() );
+	}
+
+	public function test_country_block_deploys_one_rule() {
+		$log    = array();
+		$script = array(
+			array(
+				'GET',
+				'/phases/http_request_firewall_custom/entrypoint',
+				array(
+					'id'    => 'rs1',
+					'rules' => array(),
+				),
+			),
+			array(
+				'POST',
+				'/rulesets/rs1/rules',
+				array(
+					'id'    => 'rs1',
+					'rules' => array( array( 'id' => 'r-cb', 'ref' => 'blt-secure-country-block' ) ),
+				),
+			),
+		);
+
+		$state    = $this->connected_state();
+		$deployer = new Blt_Secure_Cloudflare_Deployer(
+			new Blt_Secure_Cloudflare_Api( 'tok', $this->scripted_transport( $script, $log ) ),
+			$state
+		);
+
+		$record = $deployer->deploy(
+			'country_block',
+			array(
+				'countries'  => 'cn, ru',
+				'login_only' => true,
+				'login_slug' => 'secret-door',
+			)
+		);
+
+		$this->assertIsArray( $record );
+		$this->assertSame( array( 'countries' => 'r-cb' ), $record['rule_ids'] );
+		$this->assertSame( array( 'CN', 'RU' ), $record['countries'] );
+		$this->assertTrue( $record['login_only'] );
+		$this->assertContains( 'POST /zones/zone123/rulesets/rs1/rules', $log );
+		$this->assertNotNull( $state->deployment( 'country_block' ) );
+
+		// Pin the deployed payload: the stored hash must match the rule built
+		// with login_only + slug wired through, so silently dropping either in
+		// the deployer would fail here (the transport does not log bodies).
+		$this->assertSame(
+			Blt_Secure_Rule_Definitions::config_hash( Blt_Secure_Rule_Definitions::country_block_rules( array( 'CN', 'RU' ), true, 'secret-door' ) ),
+			$record['config_hash']
+		);
 	}
 
 	public function test_deploy_without_connection_fails() {

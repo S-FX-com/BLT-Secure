@@ -25,7 +25,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 	<nav class="nav-tab-wrapper">
 		<?php foreach ( $tabs as $blt_secure_slug => $blt_secure_label ) : ?>
-			<a href="<?php echo esc_url( admin_url( 'admin.php?page=blt-secure&tab=' . $blt_secure_slug ) ); ?>"
+			<a href="<?php echo esc_url( Blt_Secure_Admin::tab_url( $blt_secure_slug ) ); ?>"
 				class="nav-tab <?php echo $tab === $blt_secure_slug ? 'nav-tab-active' : ''; ?>">
 				<?php echo esc_html( $blt_secure_label ); ?>
 			</a>

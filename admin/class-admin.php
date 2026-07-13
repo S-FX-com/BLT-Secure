@@ -38,6 +38,13 @@ class Blt_Secure_Admin {
 	private $cf_state;
 
 	/**
+	 * Hook suffixes of our registered admin pages (top-level + submenus).
+	 *
+	 * @var string[]
+	 */
+	private $page_hooks = array();
+
+	/**
 	 * Constructor.
 	 *
 	 * @param Blt_Secure $plugin Plugin core.
@@ -68,12 +75,43 @@ class Blt_Secure_Admin {
 	}
 
 	/**
-	 * Menu entry.
+	 * The tabs, in display order. Shared by the left submenu, the on-page tab
+	 * bar, and render_page() validation.
+	 *
+	 * @return array<string,string> slug => label.
+	 */
+	public function tabs() {
+		return array(
+			'health'     => __( 'Health Check', 'blt-secure' ),
+			'scanner'    => __( 'Scanner', 'blt-secure' ),
+			'hardening'  => __( 'Hardening', 'blt-secure' ),
+			'login'      => __( 'Login', 'blt-secure' ),
+			'timeline'   => __( 'Timeline', 'blt-secure' ),
+			'cloudflare' => __( 'Cloudflare', 'blt-secure' ),
+			'advanced'   => __( 'Advanced', 'blt-secure' ),
+		);
+	}
+
+	/**
+	 * Admin URL for a tab. The default tab lives on the plain plugin slug so
+	 * old bookmarks keep working; every other tab is its own submenu page so
+	 * the left menu highlights it.
+	 *
+	 * @param string $tab Tab slug.
+	 * @return string
+	 */
+	public static function tab_url( $tab ) {
+		$page = 'health' === $tab ? 'blt-secure' : 'blt-secure-' . $tab;
+		return admin_url( 'admin.php?page=' . $page );
+	}
+
+	/**
+	 * Menu entries: the top-level page plus one submenu item per tab.
 	 *
 	 * @return void
 	 */
 	public function register_menu() {
-		add_menu_page(
+		$this->page_hooks[] = add_menu_page(
 			__( 'BLT Secure', 'blt-secure' ),
 			__( 'BLT Secure', 'blt-secure' ),
 			'manage_options',
@@ -82,6 +120,18 @@ class Blt_Secure_Admin {
 			'dashicons-shield-alt',
 			81
 		);
+
+		foreach ( $this->tabs() as $blt_slug => $blt_label ) {
+			$page               = 'health' === $blt_slug ? 'blt-secure' : 'blt-secure-' . $blt_slug;
+			$this->page_hooks[] = add_submenu_page(
+				'blt-secure',
+				$blt_label,
+				$blt_label,
+				'manage_options',
+				$page,
+				array( $this, 'render_page' )
+			);
+		}
 	}
 
 	/**
@@ -163,7 +213,7 @@ class Blt_Secure_Admin {
 	 * @return void
 	 */
 	public function enqueue_assets( $hook ) {
-		if ( 'toplevel_page_blt-secure' !== $hook ) {
+		if ( ! in_array( $hook, $this->page_hooks, true ) ) {
 			return;
 		}
 
@@ -176,18 +226,25 @@ class Blt_Secure_Admin {
 				'ajaxUrl' => admin_url( 'admin-ajax.php' ),
 				'nonce'   => wp_create_nonce( 'blt_secure_cf' ),
 				'i18n'    => array(
-					'working'   => __( 'Working…', 'blt-secure' ),
-					'deployed'  => __( 'Deployed', 'blt-secure' ),
-					'removed'   => __( 'Not deployed', 'blt-secure' ),
-					'error'     => __( 'Error', 'blt-secure' ),
-					'scanning'  => __( 'Running checks…', 'blt-secure' ),
-					'scanError' => __( 'The scan could not be completed.', 'blt-secure' ),
-					'coreScan'  => __( 'Scanning core files…', 'blt-secure' ),
-					'malScan'   => __( 'Scanning wp-content for malware…', 'blt-secure' ),
-					'iocSync'   => __( 'Syncing threat-intel feeds…', 'blt-secure' ),
-					'polling'   => __( 'Polling Cloudflare…', 'blt-secure' ),
-					'baseScan'  => __( 'Checking plugin/theme integrity…', 'blt-secure' ),
-					'reporting' => __( 'Reporting to dashboard…', 'blt-secure' ),
+					'working'       => __( 'Working…', 'blt-secure' ),
+					'deployed'      => __( 'Deployed', 'blt-secure' ),
+					'removed'       => __( 'Not deployed', 'blt-secure' ),
+					'error'         => __( 'Error', 'blt-secure' ),
+					'scanning'      => __( 'Running checks…', 'blt-secure' ),
+					'scanError'     => __( 'The scan could not be completed.', 'blt-secure' ),
+					'coreScan'      => __( 'Scanning core files…', 'blt-secure' ),
+					'malScan'       => __( 'Scanning wp-content for malware…', 'blt-secure' ),
+					'iocSync'       => __( 'Syncing threat-intel feeds…', 'blt-secure' ),
+					'polling'       => __( 'Polling Cloudflare…', 'blt-secure' ),
+					'baseScan'      => __( 'Checking plugin/theme integrity…', 'blt-secure' ),
+					'reporting'     => __( 'Reporting to dashboard…', 'blt-secure' ),
+					/* translators: %s: file path */
+					'confirmDelete' => __( 'Permanently delete "%s" from the server? This cannot be undone.', 'blt-secure' ),
+					/* translators: 1: current card number, 2: total cards */
+					'deployAllStep' => __( 'Deploying %1$s of %2$s…', 'blt-secure' ),
+					'deployAllDone' => __( 'All protections deployed.', 'blt-secure' ),
+					/* translators: %s: number of failed cards */
+					'deployAllFail' => __( '%s card(s) failed — see the message on each card.', 'blt-secure' ),
 				),
 			)
 		);
@@ -206,7 +263,7 @@ class Blt_Secure_Admin {
 			'<div class="notice notice-error"><p><strong>%s</strong> %s <a href="%s">%s</a></p></div>',
 			esc_html__( 'BLT Secure:', 'blt-secure' ),
 			esc_html__( 'the WordPress security keys changed, so the stored credentials (Cloudflare token, GitHub updates token, Slack webhook) could not be decrypted and were removed. Those features are paused until you re-enter them.', 'blt-secure' ),
-			esc_url( admin_url( 'admin.php?page=blt-secure&tab=cloudflare' ) ),
+			esc_url( self::tab_url( 'cloudflare' ) ),
 			esc_html__( 'Re-enter tokens', 'blt-secure' )
 		);
 	}
@@ -233,7 +290,7 @@ class Blt_Secure_Admin {
 
 		$on_updates_screen = in_array( $pagenow, array( 'plugins.php', 'update-core.php' ), true );
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended
-		$on_our_screen = 'admin.php' === $pagenow && isset( $_GET['page'] ) && 'blt-secure' === $_GET['page'];
+		$on_our_screen = 'admin.php' === $pagenow && isset( $_GET['page'] ) && 0 === strpos( sanitize_key( wp_unslash( $_GET['page'] ) ), 'blt-secure' );
 		if ( ! $on_updates_screen && ! $on_our_screen ) {
 			return;
 		}
@@ -246,7 +303,7 @@ class Blt_Secure_Admin {
 			'<div class="notice notice-warning"><p><strong>%s</strong> %s <a href="%s">%s</a></p></div>',
 			esc_html__( 'BLT Secure:', 'blt-secure' ),
 			esc_html__( 'plugin updates cannot be checked — no GitHub access token is configured. Add one on the Advanced tab, or define BLT_SECURE_GITHUB_TOKEN in wp-config.php.', 'blt-secure' ),
-			esc_url( admin_url( 'admin.php?page=blt-secure&tab=advanced' ) ),
+			esc_url( self::tab_url( 'advanced' ) ),
 			esc_html__( 'Add token', 'blt-secure' )
 		);
 	}
@@ -261,19 +318,19 @@ class Blt_Secure_Admin {
 			return;
 		}
 
-		// phpcs:ignore WordPress.Security.NonceVerification.Recommended
-		$tab  = isset( $_GET['tab'] ) ? sanitize_key( wp_unslash( $_GET['tab'] ) ) : 'hardening';
-		$tabs = array(
-			'hardening'  => __( 'Hardening', 'blt-secure' ),
-			'login'      => __( 'Login', 'blt-secure' ),
-			'health'     => __( 'Health Check', 'blt-secure' ),
-			'scanner'    => __( 'Scanner', 'blt-secure' ),
-			'timeline'   => __( 'Timeline', 'blt-secure' ),
-			'cloudflare' => __( 'Cloudflare', 'blt-secure' ),
-			'advanced'   => __( 'Advanced', 'blt-secure' ),
-		);
+		// The tab comes from the submenu page slug (blt-secure-{tab}); the
+		// plain slug honors ?tab= so pre-submenu bookmarks keep working.
+		// phpcs:disable WordPress.Security.NonceVerification.Recommended
+		$page = isset( $_GET['page'] ) ? sanitize_key( wp_unslash( $_GET['page'] ) ) : '';
+		$tab  = isset( $_GET['tab'] ) ? sanitize_key( wp_unslash( $_GET['tab'] ) ) : 'health';
+		// phpcs:enable WordPress.Security.NonceVerification.Recommended
+		if ( 0 === strpos( $page, 'blt-secure-' ) ) {
+			$tab = substr( $page, strlen( 'blt-secure-' ) );
+		}
+
+		$tabs = $this->tabs();
 		if ( ! isset( $tabs[ $tab ] ) ) {
-			$tab = 'hardening';
+			$tab = 'health';
 		}
 
 		$options   = $this->plugin->options;
@@ -298,23 +355,27 @@ class Blt_Secure_Admin {
 	 */
 	public function cf_cards() {
 		return array(
-			'waf_managed'  => array(
+			'waf_managed'   => array(
 				'title' => __( 'Managed WAF rules', 'blt-secure' ),
 				'desc'  => __( 'Cloudflare Managed Ruleset with the WordPress category emphasized, plus the OWASP Core Ruleset at paranoia level 2. Free-plan zones automatically get the Free Managed Ruleset instead.', 'blt-secure' ),
 			),
-			'custom_pack'  => array(
+			'custom_pack'   => array(
 				'title' => __( 'Custom rules pack', 'blt-secure' ),
 				'desc'  => __( 'Challenge high-abuse hosting ASNs and TOR exits; block wp-config / .env / .git probes outright.', 'blt-secure' ),
 			),
-			'rate_limit'   => array(
+			'country_block' => array(
+				'title' => __( 'Country blocking', 'blt-secure' ),
+				'desc'  => __( 'Block traffic from the countries you list, enforced at the Cloudflare edge before it reaches your server. Use the login-only mode to keep the site readable worldwide while stopping sign-ins — and be careful with full-site blocking if you rely on crawlers or customers from those regions.', 'blt-secure' ),
+			),
+			'rate_limit'    => array(
 				'title' => __( 'Login rate limiting', 'blt-secure' ),
 				'desc'  => __( '5 requests per minute per IP on wp-login.php, xmlrpc.php, and your custom login slug; violators blocked for 10 minutes at the edge.', 'blt-secure' ),
 			),
-			'leaked_creds' => array(
+			'leaked_creds'  => array(
 				'title' => __( 'Leaked-credential check', 'blt-secure' ),
 				'desc'  => __( 'Detects logins using breached username/password pairs on the WordPress login form and challenges them before they reach PHP.', 'blt-secure' ),
 			),
-			'access'       => array(
+			'access'        => array(
 				'title' => __( 'Cloudflare Access (Zero Trust)', 'blt-secure' ),
 				'desc'  => __( 'Puts wp-admin and your login URL behind Cloudflare Access with an email allow-list. An admin-ajax.php bypass is created automatically so front-end features keep working. Requires the token to also carry Account → Access: Apps and Policies: Edit.', 'blt-secure' ),
 			),
@@ -436,8 +497,21 @@ class Blt_Secure_Admin {
 		if ( isset( $_POST['score_threshold'] ) ) {
 			$config['score_threshold'] = absint( wp_unslash( $_POST['score_threshold'] ) );
 		}
+		if ( isset( $_POST['countries'] ) ) {
+			$config['countries'] = Blt_Secure_Rule_Definitions::sanitize_country_codes(
+				sanitize_text_field( wp_unslash( $_POST['countries'] ) )
+			);
+		}
+		if ( isset( $_POST['login_only'] ) ) {
+			$config['login_only'] = '1' === sanitize_text_field( wp_unslash( $_POST['login_only'] ) );
+		}
 		// phpcs:enable WordPress.Security.NonceVerification.Missing
 
+		// The country selection is NOT persisted to settings: any write to the
+		// registered blt_secure_settings option runs through sanitize_settings(),
+		// which drops sections that no module owns. The deployment record the
+		// deployer stores (countries + login_only) is the source of truth, and
+		// the card reads its inputs back from there.
 		$result = $deployer->deploy( $feature, $config );
 
 		if ( is_wp_error( $result ) ) {

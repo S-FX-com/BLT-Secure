@@ -182,6 +182,85 @@ class Blt_Secure_Rule_Definitions {
 	}
 
 	/**
+	 * Normalize a country selection to a sorted, deduped list of ISO 3166-1
+	 * alpha-2 codes ("T1", Cloudflare's Tor pseudo-country, is also allowed).
+	 * Accepts an array or a comma/space-separated string; anything that is
+	 * not a valid code is dropped.
+	 *
+	 * Pure function (unit-tested).
+	 *
+	 * @param string|array $input Raw selection.
+	 * @return string[] Uppercase codes, sorted.
+	 */
+	public static function sanitize_country_codes( $input ) {
+		if ( is_string( $input ) ) {
+			$input = preg_split( '/[\s,]+/', $input, -1, PREG_SPLIT_NO_EMPTY );
+		}
+		if ( ! is_array( $input ) ) {
+			return array();
+		}
+
+		$codes = array();
+		foreach ( $input as $code ) {
+			if ( ! is_string( $code ) && ! is_numeric( $code ) ) {
+				continue;
+			}
+			$code = strtoupper( trim( (string) $code ) );
+			if ( preg_match( '/^(?:[A-Z]{2}|T1)$/', $code ) ) {
+				$codes[ $code ] = true;
+			}
+		}
+
+		$codes = array_keys( $codes );
+		sort( $codes );
+		return $codes;
+	}
+
+	/**
+	 * Country-block rule for the custom phase: one rule blocking the selected
+	 * countries site-wide, or (login-only mode) just on the login endpoints
+	 * so visitors can still browse but never sign in.
+	 *
+	 * @param string[] $countries  ISO country codes (pre-sanitized).
+	 * @param bool     $login_only Restrict the block to login endpoints.
+	 * @param string   $login_slug Custom login slug ('' when unset).
+	 * @return array[] Rule payloads keyed by ref suffix.
+	 */
+	public static function country_block_rules( array $countries, $login_only = false, $login_slug = '' ) {
+		$countries = self::sanitize_country_codes( $countries );
+
+		$quoted = array();
+		foreach ( $countries as $code ) {
+			$quoted[] = '"' . $code . '"';
+		}
+		$expression = '(ip.src.country in {' . implode( ' ', $quoted ) . '})';
+
+		if ( $login_only ) {
+			$paths = array( '/wp-login.php', '/xmlrpc.php' );
+			if ( '' !== $login_slug ) {
+				$paths[] = '/' . ltrim( $login_slug, '/' );
+			}
+			$parts = array();
+			foreach ( $paths as $path ) {
+				$parts[] = 'http.request.uri.path eq "' . $path . '"';
+			}
+			$expression = '(' . $expression . ' and (' . implode( ' or ', $parts ) . '))';
+		}
+
+		return array(
+			'countries' => array(
+				'ref'         => 'blt-secure-country-block',
+				'description' => $login_only
+					? '[BLT Secure] Block logins from selected countries'
+					: '[BLT Secure] Block visits from selected countries',
+				'expression'  => $expression,
+				'action'      => 'block',
+				'enabled'     => true,
+			),
+		);
+	}
+
+	/**
 	 * Rate-limit rule for login endpoints (one rule — free-plan budget).
 	 *
 	 * @param string $login_slug Custom login slug ('' when unset).

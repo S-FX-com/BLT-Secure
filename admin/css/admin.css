@@ -419,3 +419,48 @@
 	align-self: center;
 	white-space: nowrap;
 }
+
+/* Stacked ignore + delete actions on malware finding rows. */
+.blt-hc-actions {
+	flex: 0 0 auto;
+	align-self: center;
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	align-items: flex-end;
+	white-space: nowrap;
+}
+
+/* Consolidated ignore list. */
+.blt-wl-table {
+	max-width: 900px;
+	margin-top: 8px;
+}
+
+/* Backup access URL under the login-slug field. */
+.blt-backup-url {
+	margin-top: 12px;
+	padding: 10px 12px;
+	background: #f6f7f7;
+	border: 1px solid #dcdcde;
+	border-radius: 4px;
+	max-width: 520px;
+}
+
+.blt-backup-url input {
+	width: 100%;
+}
+
+/* Country-block card controls + the deploy-all row. */
+.blt-country-controls {
+	margin: 8px 0;
+}
+
+.blt-country-controls .blt-countries {
+	width: 100%;
+	max-width: 320px;
+}
+
+.blt-deploy-all-row {
+	margin: 12px 0 4px;
+}

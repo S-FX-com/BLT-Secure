@@ -32,6 +32,13 @@ $blt_secure_opt   = Blt_Secure_Options::OPTION;
 					<p class="blt-setting-desc"><?php esc_html_e( 'Leave empty to keep the default wp-login.php. When set, wp-login.php and unauthenticated wp-admin return 404. You will receive the new URL by email; bookmark it.', 'blt-secure' ); ?></p>
 					<p class="blt-setting-desc"><code><?php echo esc_html( untrailingslashit( home_url() ) ); ?>/</code>
 					<input type="text" id="blt-login-slug" name="<?php echo esc_attr( $blt_secure_opt ); ?>[login][slug]" value="<?php echo esc_attr( $blt_secure_login['slug'] ); ?>" class="regular-text" style="max-width:200px;" placeholder="<?php esc_attr_e( 'my-secret-login', 'blt-secure' ); ?>" /></p>
+					<?php if ( '' !== $blt_secure_login['slug'] && '' !== $blt_secure_login['backup_key'] ) : ?>
+						<div class="blt-backup-url">
+							<div class="blt-setting-title"><?php esc_html_e( 'Backup access URL', 'blt-secure' ); ?></div>
+							<p class="blt-setting-desc"><?php esc_html_e( 'Opens the login screen even if you forget the custom slug. Bookmark it somewhere safe and do not share it — anyone with this URL can find your login page (they still need your password). A new URL is generated whenever the slug changes.', 'blt-secure' ); ?></p>
+							<input type="text" class="regular-text code" readonly value="<?php echo esc_attr( add_query_arg( 'blt_secure_key', $blt_secure_login['backup_key'], home_url( '/' ) ) ); ?>" onfocus="this.select();" />
+						</div>
+					<?php endif; ?>
 				<?php endif; ?>
 			</div>
 		</div>
