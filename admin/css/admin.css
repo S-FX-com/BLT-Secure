@@ -450,3 +450,17 @@
 .blt-backup-url input {
 	width: 100%;
 }
+
+/* Country-block card controls + the deploy-all row. */
+.blt-country-controls {
+	margin: 8px 0;
+}
+
+.blt-country-controls .blt-countries {
+	width: 100%;
+	max-width: 320px;
+}
+
+.blt-deploy-all-row {
+	margin: 12px 0 4px;
+}

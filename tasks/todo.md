@@ -132,3 +132,15 @@
 - [ ] Ignore list: ignore findings in two different scanners → both appear in the Scanner tab's "Ignore list" table with date/user; Restore returns the finding to the active list on the next scan.
 - [ ] Menu: left menu shows Health Check/Scanner/Hardening/Login/Timeline/Cloudflare/Advanced under BLT Secure; each highlights when active; `admin.php?page=blt-secure&tab=cloudflare` still lands on the Cloudflare tab.
 - [ ] Backup URL: set a login slug → backup URL appears on the Login tab and in the email; open it logged-out → login screen renders and login works; wrong/missing key still 404s; changing the slug rotates the key (old URL 404s).
+
+## Phase 5 — Edge-first firewall
+
+- [x] **Country blocking (Cloudflare card)** — block traffic from selected countries at the edge.
+  - AC: one custom-phase rule (`blt-secure-country-block`) built by pure `country_block_rules()` (golden-tested): site-wide `ip.src.country in {…}` block, or login-only mode that scopes the block to wp-login.php/xmlrpc.php/custom slug so the site stays readable; codes validated by pure `sanitize_country_codes()` (ISO alpha-2 + T1, dedupe/sort, junk dropped — nothing unvalidated ever reaches the rule expression); deployer refuses an empty selection (`blt_cf_validation`); the card reads its inputs back from the CF deployment record (NOT the settings option — the Settings API sanitizer owns `blt_secure_settings` and drops unregistered sections, see lessons.md), so it always shows what is live at the edge; slug drift flips the "Update available" badge like rate_limit; removable individually and included in `remove_all()`; card input is a lightweight comma-separated code field (matches the ASN-input pattern).
+- [x] **One-click "Deploy all protections"** — single button on the Cloudflare tab once connected.
+  - AC: sequentially deploys every card through the same `runCard()` code path as the per-card buttons (per-card badges/messages update live, one progress counter "Deploying N of M…"); Cloudflare Access is deliberately excluded (it changes how you sign in — separate opt-in) and country blocking is skipped while its country list is empty; failures don't halt the run — the summary reports the failed count and each card keeps its own error message.
+
+### Manual smoke additions
+
+- [ ] Country block: list `T1` (Tor) + one country on the card → Deploy → confirm the rule appears in the CF dashboard custom rules with the exact expression; toggle login-only + redeploy → expression now scoped to login paths; visit via a VPN exit in a blocked country → 403 edge block (site-wide) or block only on wp-login.php (login-only); Remove → rule gone; junk codes ("USA", "12") are dropped and an empty selection refuses to deploy.
+- [ ] Deploy all: fresh zone + token → one click → WAF, custom pack, rate limit, leaked creds all deploy with green badges; country card skipped while empty; Access card untouched; break the token scope for one feature → run completes, summary shows "1 card(s) failed", the failing card carries the scope hint.

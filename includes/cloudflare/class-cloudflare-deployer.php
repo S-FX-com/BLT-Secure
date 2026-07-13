@@ -19,7 +19,7 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class Blt_Secure_Cloudflare_Deployer {
 
-	const FEATURES = array( 'waf_managed', 'custom_pack', 'rate_limit', 'leaked_creds', 'access' );
+	const FEATURES = array( 'waf_managed', 'custom_pack', 'country_block', 'rate_limit', 'leaked_creds', 'access' );
 
 	/**
 	 * API client.
@@ -93,6 +93,8 @@ class Blt_Secure_Cloudflare_Deployer {
 				return $this->deploy_waf_managed( $zone, $config );
 			case 'custom_pack':
 				return $this->deploy_ruleset_feature( $zone, 'custom_pack', Blt_Secure_Rule_Definitions::PHASE_CUSTOM, Blt_Secure_Rule_Definitions::custom_pack_rules() );
+			case 'country_block':
+				return $this->deploy_country_block( $zone, $config );
 			case 'rate_limit':
 				$slug = isset( $config['login_slug'] ) ? (string) $config['login_slug'] : '';
 				return $this->deploy_ruleset_feature( $zone, 'rate_limit', Blt_Secure_Rule_Definitions::PHASE_RATELIMIT, Blt_Secure_Rule_Definitions::rate_limit_rules( $slug ) );
@@ -122,6 +124,7 @@ class Blt_Secure_Cloudflare_Deployer {
 		switch ( $feature ) {
 			case 'waf_managed':
 			case 'custom_pack':
+			case 'country_block':
 			case 'rate_limit':
 				$result = $this->remove_rules( $zone, $record );
 				break;
@@ -292,6 +295,40 @@ class Blt_Secure_Cloudflare_Deployer {
 		}
 
 		return $result;
+	}
+
+	// -------------------------------------------------------------------
+	// Feature: country block.
+	// -------------------------------------------------------------------
+
+	/**
+	 * Deploy the country-block rule. Refuses an empty selection so a bad
+	 * request can never deploy a rule with an always-false (or malformed)
+	 * expression.
+	 *
+	 * @param array $zone Zone identity.
+	 * @param array $config countries / login_only / login_slug.
+	 * @return array|WP_Error
+	 */
+	private function deploy_country_block( array $zone, array $config ) {
+		$countries = isset( $config['countries'] ) ? Blt_Secure_Rule_Definitions::sanitize_country_codes( $config['countries'] ) : array();
+		if ( empty( $countries ) ) {
+			return new WP_Error( 'blt_cf_validation', __( 'Choose at least one country to block first.', 'blt-secure' ) );
+		}
+
+		$login_only = ! empty( $config['login_only'] );
+		$slug       = isset( $config['login_slug'] ) ? (string) $config['login_slug'] : '';
+
+		return $this->deploy_ruleset_feature(
+			$zone,
+			'country_block',
+			Blt_Secure_Rule_Definitions::PHASE_CUSTOM,
+			Blt_Secure_Rule_Definitions::country_block_rules( $countries, $login_only, $slug ),
+			array(
+				'countries'  => $countries,
+				'login_only' => $login_only,
+			)
+		);
 	}
 
 	// -------------------------------------------------------------------

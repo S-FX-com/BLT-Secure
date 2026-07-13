@@ -477,67 +477,145 @@
 		}
 	} );
 
-	// Deploy / remove cards.
-	document.querySelectorAll( '.blt-card' ).forEach( function ( card ) {
-		var feature = card.getAttribute( 'data-feature' );
+	// Deploy / remove cards. runCard() returns a Promise<boolean> so the
+	// per-card buttons and the "Deploy all" runner share one code path.
+	function cardExtra( card ) {
+		var extra = {};
+		var paranoia = card.querySelector( '.blt-paranoia' );
+		var threshold = card.querySelector( '.blt-threshold' );
+		var countries = card.querySelector( '.blt-countries' );
+		var loginOnly = card.querySelector( '.blt-country-login-only' );
+		if ( paranoia ) {
+			extra.paranoia = paranoia.value;
+		}
+		if ( threshold ) {
+			extra.score_threshold = threshold.value;
+		}
+		if ( countries ) {
+			extra.countries = countries.value;
+		}
+		if ( loginOnly ) {
+			extra.login_only = loginOnly.checked ? '1' : '0';
+		}
+		return extra;
+	}
+
+	function runCard( card, action, extra ) {
 		var message = card.querySelector( '.blt-card-message' );
 		var badge = card.querySelector( '.blt-badge' );
+		var buttons = card.querySelectorAll( 'button' );
 
-		function run( action, extra ) {
-			var buttons = card.querySelectorAll( 'button' );
+		buttons.forEach( function ( b ) {
+			b.disabled = true;
+		} );
+		setMessage( message, cfg.i18n.working, false );
+
+		var data = { feature: card.getAttribute( 'data-feature' ) };
+		Object.keys( extra || {} ).forEach( function ( k ) {
+			data[ k ] = extra[ k ];
+		} );
+
+		return post( action, data ).then( function ( json ) {
 			buttons.forEach( function ( b ) {
-				b.disabled = true;
+				b.disabled = false;
 			} );
-			setMessage( message, cfg.i18n.working, false );
-
-			var data = { feature: feature };
-			Object.keys( extra || {} ).forEach( function ( k ) {
-				data[ k ] = extra[ k ];
-			} );
-
-			post( action, data ).then( function ( json ) {
-				buttons.forEach( function ( b ) {
-					b.disabled = false;
-				} );
-				if ( json.success ) {
-					setMessage( message, json.data.message, false );
-					if ( badge ) {
-						var deployed = 'blt_secure_cf_deploy' === action;
-						badge.textContent = deployed ? cfg.i18n.deployed : cfg.i18n.removed;
-						badge.className = 'blt-badge' + ( deployed ? ' blt-badge-ok' : '' );
-					}
-				} else {
-					setMessage( message, json.data.message, true );
+			if ( json.success ) {
+				setMessage( message, json.data.message, false );
+				if ( badge ) {
+					var deployed = 'blt_secure_cf_deploy' === action;
+					badge.textContent = deployed ? cfg.i18n.deployed : cfg.i18n.removed;
+					badge.className = 'blt-badge' + ( deployed ? ' blt-badge-ok' : '' );
 				}
-			} ).catch( function () {
-				buttons.forEach( function ( b ) {
-					b.disabled = false;
-				} );
-				setMessage( message, cfg.i18n.error, true );
+				return true;
+			}
+			setMessage( message, json.data.message, true );
+			return false;
+		} ).catch( function () {
+			buttons.forEach( function ( b ) {
+				b.disabled = false;
 			} );
-		}
+			setMessage( message, cfg.i18n.error, true );
+			return false;
+		} );
+	}
 
+	document.querySelectorAll( '.blt-card' ).forEach( function ( card ) {
 		var deployBtn = card.querySelector( '.blt-deploy' );
 		if ( deployBtn ) {
 			deployBtn.addEventListener( 'click', function () {
-				var extra = {};
-				var paranoia = card.querySelector( '.blt-paranoia' );
-				var threshold = card.querySelector( '.blt-threshold' );
-				if ( paranoia ) {
-					extra.paranoia = paranoia.value;
-				}
-				if ( threshold ) {
-					extra.score_threshold = threshold.value;
-				}
-				run( 'blt_secure_cf_deploy', extra );
+				runCard( card, 'blt_secure_cf_deploy', cardExtra( card ) );
 			} );
 		}
 
 		var removeBtn = card.querySelector( '.blt-remove' );
 		if ( removeBtn ) {
 			removeBtn.addEventListener( 'click', function () {
-				run( 'blt_secure_cf_remove', {} );
+				runCard( card, 'blt_secure_cf_remove', {} );
 			} );
 		}
 	} );
+
+	// Deploy all: run every card sequentially (Cloudflare rate-limits bursts)
+	// except Access (opt-in only — it changes how you sign in) and country
+	// blocking when no valid country codes are listed. All card buttons are
+	// locked for the whole run so a mid-run Remove can't be silently undone
+	// when the queue reaches that card.
+	var deployAllBtn = document.getElementById( 'blt-cf-deploy-all' );
+	if ( deployAllBtn ) {
+		deployAllBtn.addEventListener( 'click', function () {
+			var status = document.getElementById( 'blt-cf-deploy-all-status' );
+			var queue = Array.prototype.slice.call( document.querySelectorAll( '.blt-card' ) ).filter( function ( card ) {
+				var feature = card.getAttribute( 'data-feature' );
+				if ( 'access' === feature ) {
+					return false;
+				}
+				if ( 'country_block' === feature ) {
+					// Mirror the server-side sanitizer: queue the card only when
+					// at least one token is a plausible country code, so junk-only
+					// input is skipped rather than reported as a failed card.
+					var input = card.querySelector( '.blt-countries' );
+					return !! input && input.value.split( /[\s,]+/ ).some( function ( code ) {
+						return /^(?:[a-z]{2}|t1)$/i.test( code );
+					} );
+				}
+				return true;
+			} );
+			var total = queue.length;
+			var failures = 0;
+
+			deployAllBtn.disabled = true;
+			var locked = [];
+			document.querySelectorAll( '.blt-card button' ).forEach( function ( b ) {
+				if ( ! b.disabled ) {
+					b.disabled = true;
+					locked.push( b );
+				}
+			} );
+
+			function next() {
+				if ( ! queue.length ) {
+					locked.forEach( function ( b ) {
+						b.disabled = false;
+					} );
+					deployAllBtn.disabled = false;
+					if ( failures ) {
+						setMessage( status, cfg.i18n.deployAllFail.replace( '%s', String( failures ) ), true );
+					} else {
+						setMessage( status, cfg.i18n.deployAllDone, false );
+					}
+					return;
+				}
+				setMessage( status, cfg.i18n.deployAllStep.replace( '%1$s', String( total - queue.length + 1 ) ).replace( '%2$s', String( total ) ), false );
+				var card = queue.shift();
+				runCard( card, 'blt_secure_cf_deploy', cardExtra( card ) ).then( function ( ok ) {
+					if ( ! ok ) {
+						failures++;
+					}
+					next();
+				} );
+			}
+
+			next();
+		} );
+	}
 }() );

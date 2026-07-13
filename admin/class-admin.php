@@ -240,6 +240,11 @@ class Blt_Secure_Admin {
 					'reporting'     => __( 'Reporting to dashboard…', 'blt-secure' ),
 					/* translators: %s: file path */
 					'confirmDelete' => __( 'Permanently delete "%s" from the server? This cannot be undone.', 'blt-secure' ),
+					/* translators: 1: current card number, 2: total cards */
+					'deployAllStep' => __( 'Deploying %1$s of %2$s…', 'blt-secure' ),
+					'deployAllDone' => __( 'All protections deployed.', 'blt-secure' ),
+					/* translators: %s: number of failed cards */
+					'deployAllFail' => __( '%s card(s) failed — see the message on each card.', 'blt-secure' ),
 				),
 			)
 		);
@@ -350,23 +355,27 @@ class Blt_Secure_Admin {
 	 */
 	public function cf_cards() {
 		return array(
-			'waf_managed'  => array(
+			'waf_managed'   => array(
 				'title' => __( 'Managed WAF rules', 'blt-secure' ),
 				'desc'  => __( 'Cloudflare Managed Ruleset with the WordPress category emphasized, plus the OWASP Core Ruleset at paranoia level 2. Free-plan zones automatically get the Free Managed Ruleset instead.', 'blt-secure' ),
 			),
-			'custom_pack'  => array(
+			'custom_pack'   => array(
 				'title' => __( 'Custom rules pack', 'blt-secure' ),
 				'desc'  => __( 'Challenge high-abuse hosting ASNs and TOR exits; block wp-config / .env / .git probes outright.', 'blt-secure' ),
 			),
-			'rate_limit'   => array(
+			'country_block' => array(
+				'title' => __( 'Country blocking', 'blt-secure' ),
+				'desc'  => __( 'Block traffic from the countries you list, enforced at the Cloudflare edge before it reaches your server. Use the login-only mode to keep the site readable worldwide while stopping sign-ins — and be careful with full-site blocking if you rely on crawlers or customers from those regions.', 'blt-secure' ),
+			),
+			'rate_limit'    => array(
 				'title' => __( 'Login rate limiting', 'blt-secure' ),
 				'desc'  => __( '5 requests per minute per IP on wp-login.php, xmlrpc.php, and your custom login slug; violators blocked for 10 minutes at the edge.', 'blt-secure' ),
 			),
-			'leaked_creds' => array(
+			'leaked_creds'  => array(
 				'title' => __( 'Leaked-credential check', 'blt-secure' ),
 				'desc'  => __( 'Detects logins using breached username/password pairs on the WordPress login form and challenges them before they reach PHP.', 'blt-secure' ),
 			),
-			'access'       => array(
+			'access'        => array(
 				'title' => __( 'Cloudflare Access (Zero Trust)', 'blt-secure' ),
 				'desc'  => __( 'Puts wp-admin and your login URL behind Cloudflare Access with an email allow-list. An admin-ajax.php bypass is created automatically so front-end features keep working. Requires the token to also carry Account → Access: Apps and Policies: Edit.', 'blt-secure' ),
 			),
@@ -488,8 +497,21 @@ class Blt_Secure_Admin {
 		if ( isset( $_POST['score_threshold'] ) ) {
 			$config['score_threshold'] = absint( wp_unslash( $_POST['score_threshold'] ) );
 		}
+		if ( isset( $_POST['countries'] ) ) {
+			$config['countries'] = Blt_Secure_Rule_Definitions::sanitize_country_codes(
+				sanitize_text_field( wp_unslash( $_POST['countries'] ) )
+			);
+		}
+		if ( isset( $_POST['login_only'] ) ) {
+			$config['login_only'] = '1' === sanitize_text_field( wp_unslash( $_POST['login_only'] ) );
+		}
 		// phpcs:enable WordPress.Security.NonceVerification.Missing
 
+		// The country selection is NOT persisted to settings: any write to the
+		// registered blt_secure_settings option runs through sanitize_settings(),
+		// which drops sections that no module owns. The deployment record the
+		// deployer stores (countries + login_only) is the source of truth, and
+		// the card reads its inputs back from there.
 		$result = $deployer->deploy( $feature, $config );
 
 		if ( is_wp_error( $result ) ) {

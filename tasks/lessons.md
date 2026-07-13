@@ -17,3 +17,18 @@ Append-only. Things learned the hard way (or anticipated hard) while building BL
 - **rest_endpoints unset() for /wp/v2/users is fragile** across WP versions; `rest_pre_dispatch` route match is the stable interception point. oEmbed author leak deliberately out of Phase 1 scope.
 - **GoDaddy PHP builds:** sodium has been bundled since PHP 7.2 so it's the safe primary; OpenSSL AEAD ciphers occasionally missing → if no AEAD available, refuse to store secrets rather than downgrade to CBC.
 - **WP-Cron may effectively never fire** on low-traffic client sites. Anything cron-refreshed (CF IP ranges) must work forever from its shipped static fallback.
+
+## Programmatic writes to `blt_secure_settings` go through the Settings API sanitizer
+
+`register_setting()` attaches `sanitize_settings()` to the option via WP core's
+`sanitize_option` filter, and that filter fires on EVERY `update_option()` for
+that name — including our own programmatic writes (admin-ajax runs `admin_init`
+first, so the callback is always registered). `sanitize_settings()` only keeps
+sections owned by a module id, `advanced`, or a registered default — anything
+else is silently dropped, and `Blt_Secure_Options::update_section()` masks the
+loss within the same request by caching the pre-sanitize array. Symptom: the
+value "saves" (and survives until the request ends) but is gone on the next
+page load, and no test catches it because the test bootstrap's `update_option`
+shim has no sanitize machinery. Rule: state that isn't a module settings
+section belongs in its own option (like `blt_secure_cf_state`), not in
+`blt_secure_settings`.
