@@ -32,3 +32,30 @@ page load, and no test catches it because the test bootstrap's `update_option`
 shim has no sanitize machinery. Rule: state that isn't a module settings
 section belongs in its own option (like `blt_secure_cf_state`), not in
 `blt_secure_settings`.
+
+## `.blt-card` on the Cloudflare tab is a JS contract, not just a style
+
+`admin/js/admin.js` drives the edge-protection cards with
+`document.querySelectorAll( '.blt-card' )`, and "Deploy all" queues **every**
+match, reading the feature from `data-feature`. When the shared BLT design
+system arrived, the settings sections on the Hardening / Login / Advanced tabs
+were converted from `.blt-section` to the shared `.blt-card` component — safe,
+because those tabs have no `#blt-cf-deploy-all` button and no `.blt-deploy` /
+`.blt-remove` children, so no listener binds and no queue runs. Adding a
+`.blt-card` **to the Cloudflare tab** is a different matter: a card with no
+`data-feature` joins the deploy-all queue, POSTs `feature=""`, and comes back
+as a failed card. That is why the token block on that tab is a bare
+`.blt-field` row instead of a card. Either keep new Cloudflare-tab containers
+off `.blt-card`, or narrow the selector to `.blt-card[data-feature]` first.
+
+## The shared BLT family store is a read-only last rung
+
+Both fallbacks added here are reads, never writes:
+`Blt_Secure_Cloudflare_Api::resolve_token()` is the single place the CF token
+is resolved (the fallback must NOT go inside
+`Blt_Secure_Encrypted_Option_Store::get()`, which also holds the Slack
+webhook, the fleet token and the GitHub token — single-consumer secrets that
+must never resolve from a shared row), and `Blt_Secure_Cloudflare_State::zone()`
+gap-fills `account_id` / `host` in the array it returns only. Nothing borrowed
+is ever handed to `set_zone()`: a shared `account_id` in stored state would let
+the IOC deployer PUT list items into someone else's Cloudflare account.

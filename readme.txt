@@ -61,5 +61,10 @@ A custom token with Zone:Read and Zone WAF:Edit for your zone. Add Account → A
 
 == Changelog ==
 
+= 1.1.0 =
+* Adopted the shared BLT design system on the settings screens, and the BLT mark as the admin menu icon.
+* Update checks now follow the BLT family policy: at most one automatic check a day, at midnight site time, with a "Check for Updates" action on the Advanced tab.
+* On a site running more than one BLT plugin, the GitHub and Cloudflare credentials can be entered once on the BLT screen and shared — opt-in per plugin, off by default, and only ever used when this plugin's own field is empty.
+
 = 0.1.0 =
 * Initial release: login hardening, TOTP 2FA, security headers, privacy hardening, XML-RPC control, file guard, and Cloudflare one-click WAF/rate-limit/Access deployment.

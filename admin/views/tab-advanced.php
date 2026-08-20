@@ -2,7 +2,8 @@
 /**
  * Advanced tab: IP trust, uninstall behavior, recent events.
  *
- * @var Blt_Secure_Options $options Settings.
+ * @var Blt_Secure_Options      $options Settings.
+ * @var Blt_Secure_Updater|null $updater Update checker wiring (null on front-end requests).
  *
  * @package Blt_Secure
  */
@@ -19,8 +20,11 @@ $blt_secure_events   = is_array( $blt_secure_events ) ? array_slice( array_rever
 <form method="post" action="options.php" class="blt-settings">
 	<?php settings_fields( 'blt_secure' ); ?>
 
-	<div class="blt-section">
-		<h2><?php esc_html_e( 'Client IP detection', 'blt-secure' ); ?></h2>
+	<div class="blt-card">
+		<div class="blt-card-header">
+			<h2><?php esc_html_e( 'Client IP detection', 'blt-secure' ); ?></h2>
+		</div>
+		<div class="blt-card-body">
 		<?php
 		blt_secure_setting_open(
 			__( 'Trust CF-Connecting-IP', 'blt-secure' ),
@@ -36,10 +40,14 @@ $blt_secure_events   = is_array( $blt_secure_events ) ? array_slice( array_rever
 		<?php
 		blt_secure_setting_close();
 		?>
+		</div>
 	</div>
 
-	<div class="blt-section">
-		<h2><?php esc_html_e( 'Uninstall behavior', 'blt-secure' ); ?></h2>
+	<div class="blt-card">
+		<div class="blt-card-header">
+			<h2><?php esc_html_e( 'Uninstall behavior', 'blt-secure' ); ?></h2>
+		</div>
+		<div class="blt-card-body">
 		<?php
 		blt_secure_setting_open( __( 'Delete all data on uninstall', 'blt-secure' ), __( 'Remove all plugin settings and user 2FA data when the plugin is uninstalled.', 'blt-secure' ) );
 		blt_secure_setting_control();
@@ -51,12 +59,16 @@ $blt_secure_events   = is_array( $blt_secure_events ) ? array_slice( array_rever
 		blt_secure_toggle( $blt_secure_opt . '[advanced][remove_cf_on_uninstall]', ! empty( $blt_secure_advanced['remove_cf_on_uninstall'] ) );
 		blt_secure_setting_close();
 		?>
+		</div>
 	</div>
 
 	<?php $blt_secure_alerts = $options->section( 'alerts' ); ?>
-	<div class="blt-section">
-		<h2><?php esc_html_e( 'Alert notifications', 'blt-secure' ); ?></h2>
-		<p class="blt-section-desc"><?php esc_html_e( 'Get notified when a high-signal security event occurs (lockouts, blocked uploads, malware or integrity findings, a new administrator). Notifications of the same type are throttled to avoid floods.', 'blt-secure' ); ?></p>
+	<div class="blt-card">
+		<div class="blt-card-header">
+			<h2><?php esc_html_e( 'Alert notifications', 'blt-secure' ); ?></h2>
+			<p><?php esc_html_e( 'Get notified when a high-signal security event occurs (lockouts, blocked uploads, malware or integrity findings, a new administrator). Notifications of the same type are throttled to avoid floods.', 'blt-secure' ); ?></p>
+		</div>
+		<div class="blt-card-body">
 		<?php
 		blt_secure_setting_open( __( 'Email notifications', 'blt-secure' ), __( 'Send alerts by email.', 'blt-secure' ) );
 		blt_secure_setting_control();
@@ -78,12 +90,16 @@ $blt_secure_events   = is_array( $blt_secure_events ) ? array_slice( array_rever
 		blt_secure_toggle( $blt_secure_opt . '[alerts][slack_enabled]', ! empty( $blt_secure_alerts['slack_enabled'] ) );
 		blt_secure_setting_close();
 		?>
+		</div>
 	</div>
 
 	<?php $blt_secure_fleet = $options->section( 'fleet' ); ?>
-	<div class="blt-section">
-		<h2><?php esc_html_e( 'Fleet reporting', 'blt-secure' ); ?></h2>
-		<p class="blt-section-desc"><?php esc_html_e( 'Push a compact security-posture snapshot (scores, counts, statuses, versions — never secrets or file contents) to your BLT Secure fleet dashboard. Off by default.', 'blt-secure' ); ?></p>
+	<div class="blt-card">
+		<div class="blt-card-header">
+			<h2><?php esc_html_e( 'Fleet reporting', 'blt-secure' ); ?></h2>
+			<p><?php esc_html_e( 'Push a compact security-posture snapshot (scores, counts, statuses, versions — never secrets or file contents) to your BLT Secure fleet dashboard. Off by default.', 'blt-secure' ); ?></p>
+		</div>
+		<div class="blt-card-body">
 		<?php
 		blt_secure_setting_open( __( 'Enable fleet reporting', 'blt-secure' ), __( 'Send a daily snapshot and an immediate push when a high-signal event occurs.', 'blt-secure' ) );
 		blt_secure_setting_control();
@@ -105,12 +121,16 @@ $blt_secure_events   = is_array( $blt_secure_events ) ? array_slice( array_rever
 		blt_secure_toggle( $blt_secure_opt . '[fleet][commands]', ! empty( $blt_secure_fleet['commands'] ) );
 		blt_secure_setting_close();
 		?>
+		</div>
 	</div>
 
 	<?php $blt_secure_badge = $options->section( 'badge' ); ?>
-	<div class="blt-section">
-		<h2><?php esc_html_e( 'Trust badge', 'blt-secure' ); ?></h2>
-		<p class="blt-section-desc"><?php esc_html_e( 'Show a "Protected by BLT Secure" badge on your site. It discloses nothing about your security posture — just a padlock and a label.', 'blt-secure' ); ?></p>
+	<div class="blt-card">
+		<div class="blt-card-header">
+			<h2><?php esc_html_e( 'Trust badge', 'blt-secure' ); ?></h2>
+			<p><?php esc_html_e( 'Show a "Protected by BLT Secure" badge on your site. It discloses nothing about your security posture — just a padlock and a label.', 'blt-secure' ); ?></p>
+		</div>
+		<div class="blt-card-body">
 		<?php
 		blt_secure_setting_open( __( 'Enable the trust badge', 'blt-secure' ), __( 'Registers the [blt_secure_badge] shortcode. Place it in a widget, footer, or page.', 'blt-secure' ) );
 		blt_secure_setting_control();
@@ -127,13 +147,19 @@ $blt_secure_events   = is_array( $blt_secure_events ) ? array_slice( array_rever
 				</div>
 			</div>
 		<?php endif; ?>
+		</div>
 	</div>
 
-	<?php submit_button(); ?>
+	<div class="blt-settings-footer">
+		<?php submit_button( null, 'primary blt-save-button', 'submit', false ); ?>
+	</div>
 </form>
 
-<div class="blt-section">
-	<h2><?php esc_html_e( 'Fleet enrollment', 'blt-secure' ); ?></h2>
+<div class="blt-card">
+	<div class="blt-card-header">
+		<h2><?php esc_html_e( 'Fleet enrollment', 'blt-secure' ); ?></h2>
+	</div>
+	<div class="blt-card-body">
 	<div class="blt-setting">
 		<div class="blt-setting-info">
 			<div class="blt-setting-title"><?php esc_html_e( 'Enrollment token', 'blt-secure' ); ?></div>
@@ -157,10 +183,14 @@ $blt_secure_events   = is_array( $blt_secure_events ) ? array_slice( array_rever
 			<?php endif; ?>
 		</div>
 	</div>
+	</div>
 </div>
 
-<div class="blt-section">
-	<h2><?php esc_html_e( 'Slack webhook', 'blt-secure' ); ?></h2>
+<div class="blt-card">
+	<div class="blt-card-header">
+		<h2><?php esc_html_e( 'Slack webhook', 'blt-secure' ); ?></h2>
+	</div>
+	<div class="blt-card-body">
 	<div class="blt-setting">
 		<div class="blt-setting-info">
 			<div class="blt-setting-title"><?php esc_html_e( 'Incoming webhook URL', 'blt-secure' ); ?></div>
@@ -180,10 +210,14 @@ $blt_secure_events   = is_array( $blt_secure_events ) ? array_slice( array_rever
 			<?php endif; ?>
 		</div>
 	</div>
+	</div>
 </div>
 
-<div class="blt-section">
-	<h2><?php esc_html_e( 'Plugin updates', 'blt-secure' ); ?></h2>
+<div class="blt-card">
+	<div class="blt-card-header">
+		<h2><?php esc_html_e( 'Plugin updates', 'blt-secure' ); ?></h2>
+	</div>
+	<div class="blt-card-body">
 	<div class="blt-setting">
 		<div class="blt-setting-info">
 			<div class="blt-setting-title"><?php esc_html_e( 'GitHub access token', 'blt-secure' ); ?></div>
@@ -223,10 +257,59 @@ $blt_secure_events   = is_array( $blt_secure_events ) ? array_slice( array_rever
 			<?php endif; ?>
 		</div>
 	</div>
+	<div class="blt-setting">
+		<div class="blt-setting-info">
+			<div class="blt-setting-title"><?php esc_html_e( 'Update checks', 'blt-secure' ); ?></div>
+			<?php
+			/*
+			 * The automatic check runs once a day at midnight site time (the
+			 * shared BLT family update policy). This link is the same manual
+			 * check the Plugins screen offers: it runs immediately and ignores
+			 * that daily floor.
+			 */
+			$blt_secure_last_check = null !== $updater ? BLT_Family_Updates::last_check_time( $updater->checker() ) : 0;
+			?>
+			<p class="blt-setting-desc">
+				<?php
+				if ( $blt_secure_last_check > 0 ) {
+					printf(
+						/* translators: %s: human-readable time difference, e.g. "3 hours" */
+						esc_html__( 'Checked %s ago. BLT Secure checks for updates automatically once a day, at midnight site time.', 'blt-secure' ),
+						esc_html( human_time_diff( $blt_secure_last_check, time() ) )
+					);
+				} else {
+					esc_html_e( 'BLT Secure checks for updates automatically once a day, at midnight site time.', 'blt-secure' );
+				}
+				?>
+			</p>
+			<?php
+			/*
+			 * Only for users who can actually reach the destination. The link
+			 * lands on plugins.php, which needs 'activate_plugins'; this screen
+			 * only needs 'manage_options'. On multisite those come apart —
+			 * map_meta_cap() maps 'activate_plugins' to 'manage_network_plugins'
+			 * unless the network exposes the Plugins menu — so a subsite admin
+			 * would see the button and get "Sorry, you are not allowed to manage
+			 * plugins for this site" instead of an update check.
+			 */
+			if ( current_user_can( 'activate_plugins' ) ) :
+				?>
+				<p>
+					<a class="button" href="<?php echo esc_url( BLT_Family_Updates::check_now_url( 'blt-secure' ) ); ?>">
+						<?php esc_html_e( 'Check for Updates', 'blt-secure' ); ?>
+					</a>
+				</p>
+			<?php endif; ?>
+		</div>
+	</div>
+	</div>
 </div>
 
-<div class="blt-section">
-	<h2><?php esc_html_e( 'Threat-intel blocklist (Cloudflare)', 'blt-secure' ); ?></h2>
+<div class="blt-card">
+	<div class="blt-card-header">
+		<h2><?php esc_html_e( 'Threat-intel blocklist (Cloudflare)', 'blt-secure' ); ?></h2>
+	</div>
+	<div class="blt-card-body">
 	<div class="blt-setting">
 		<div class="blt-setting-info">
 			<div class="blt-setting-title"><?php esc_html_e( 'IOC feed sync', 'blt-secure' ); ?></div>
@@ -300,13 +383,21 @@ $blt_secure_events   = is_array( $blt_secure_events ) ? array_slice( array_rever
 			<?php endif; ?>
 		</div>
 	</div>
+	</div>
 </div>
 
-<h2><?php esc_html_e( 'Recent security events', 'blt-secure' ); ?></h2>
+<div class="blt-card">
+	<div class="blt-card-header">
+		<h2><?php esc_html_e( 'Recent security events', 'blt-secure' ); ?></h2>
+	</div>
+	<div class="blt-card-body">
 <?php if ( empty( $blt_secure_events ) ) : ?>
-	<p class="description"><?php esc_html_e( 'No events recorded yet.', 'blt-secure' ); ?></p>
+	<div class="blt-empty">
+		<span class="blt-empty-title"><?php esc_html_e( 'No events recorded yet', 'blt-secure' ); ?></span>
+		<span><?php esc_html_e( 'Lockouts, blocked uploads and integrity findings show up here as they happen.', 'blt-secure' ); ?></span>
+	</div>
 <?php else : ?>
-	<table class="widefat striped" style="max-width:900px;">
+	<table class="widefat striped">
 		<thead>
 			<tr>
 				<th><?php esc_html_e( 'Time', 'blt-secure' ); ?></th>
@@ -325,3 +416,5 @@ $blt_secure_events   = is_array( $blt_secure_events ) ? array_slice( array_rever
 		</tbody>
 	</table>
 <?php endif; ?>
+	</div>
+</div>

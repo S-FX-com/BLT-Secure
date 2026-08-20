@@ -18,9 +18,11 @@ $blt_secure_opt   = Blt_Secure_Options::OPTION;
 <form method="post" action="options.php" class="blt-settings">
 	<?php settings_fields( 'blt_secure' ); ?>
 
-	<div class="blt-section">
-		<h2><?php esc_html_e( 'Login URL', 'blt-secure' ); ?></h2>
-
+	<div class="blt-card">
+		<div class="blt-card-header">
+			<h2><?php esc_html_e( 'Login URL', 'blt-secure' ); ?></h2>
+		</div>
+		<div class="blt-card-body">
 		<div class="blt-setting">
 			<div class="blt-setting-info">
 				<div class="blt-setting-title"><?php esc_html_e( 'Custom login slug', 'blt-secure' ); ?></div>
@@ -42,11 +44,14 @@ $blt_secure_opt   = Blt_Secure_Options::OPTION;
 				<?php endif; ?>
 			</div>
 		</div>
+		</div>
 	</div>
 
-	<div class="blt-section">
-		<h2><?php esc_html_e( 'Failed-login lockout', 'blt-secure' ); ?></h2>
-
+	<div class="blt-card">
+		<div class="blt-card-header">
+			<h2><?php esc_html_e( 'Failed-login lockout', 'blt-secure' ); ?></h2>
+		</div>
+		<div class="blt-card-body">
 		<div class="blt-setting">
 			<div class="blt-setting-info">
 				<div class="blt-setting-title"><?php esc_html_e( 'Lock out repeated failures', 'blt-secure' ); ?></div>
@@ -62,11 +67,14 @@ $blt_secure_opt   = Blt_Secure_Options::OPTION;
 				<?php blt_secure_toggle( $blt_secure_opt . '[login][lockout_enabled]', ! empty( $blt_secure_login['lockout_enabled'] ) ); ?>
 			</div>
 		</div>
+		</div>
 	</div>
 
-	<div class="blt-section">
-		<h2><?php esc_html_e( 'Two-factor authentication', 'blt-secure' ); ?></h2>
-
+	<div class="blt-card">
+		<div class="blt-card-header">
+			<h2><?php esc_html_e( 'Two-factor authentication', 'blt-secure' ); ?></h2>
+		</div>
+		<div class="blt-card-body">
 		<?php
 		blt_secure_setting_open(
 			__( 'Policy', 'blt-secure' ),
@@ -82,7 +90,10 @@ $blt_secure_opt   = Blt_Secure_Options::OPTION;
 		<?php
 		blt_secure_setting_close();
 		?>
+		</div>
 	</div>
 
-	<?php submit_button(); ?>
+	<div class="blt-settings-footer">
+		<?php submit_button( null, 'primary blt-save-button', 'submit', false ); ?>
+	</div>
 </form>

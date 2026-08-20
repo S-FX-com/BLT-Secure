@@ -23,7 +23,8 @@ if ( ! defined( 'ABSPATH' ) ) {
  *
  * Token precedence: the BLT_SECURE_GITHUB_TOKEN wp-config constant wins
  * (fleet automation), else the encrypted credential store ('github_token',
- * managed on the Advanced tab).
+ * managed on the Advanced tab), else the shared BLT family store (opt-in,
+ * off by default).
  */
 class Blt_Secure_Updater {
 
@@ -37,6 +38,13 @@ class Blt_Secure_Updater {
 	 * @var Blt_Secure_Credential_Store
 	 */
 	private $store;
+
+	/**
+	 * The plugin-update-checker instance, once boot() has built it.
+	 *
+	 * @var object|null
+	 */
+	private $checker = null;
 
 	/**
 	 * Constructor.
@@ -73,7 +81,8 @@ class Blt_Secure_Updater {
 		$checker = \YahnisElsts\PluginUpdateChecker\v5\PucFactory::buildUpdateChecker(
 			self::REPO_URL,
 			BLT_SECURE_FILE,
-			'blt-secure'
+			'blt-secure',
+			24
 		);
 
 		$checker->setBranch( 'main' );
@@ -85,6 +94,35 @@ class Blt_Secure_Updater {
 
 		// Only accept the CI-built zip asset; ignore checksums/source archives.
 		$checker->getVcsApi()->enableReleaseAssets( self::ASSET_REGEX );
+
+		/*
+		 * Family update policy: at most one automatic check a day, anchored to
+		 * 00:00 site time, with manual checks ("Check for Updates") always
+		 * allowed. The 24-hour $checkPeriod above is required — a checker built
+		 * with 0 registers no scheduler hooks at all and cannot be revived
+		 * afterwards.
+		 */
+		BLT_Family_Updates::apply(
+			$checker,
+			array(
+				'basename'  => plugin_basename( BLT_SECURE_FILE ),
+				'icons_url' => BLT_SECURE_URL . 'assets/img/',
+			)
+		);
+
+		$this->checker = $checker;
+	}
+
+	/**
+	 * The configured update checker, or null before boot() ran.
+	 *
+	 * Exposed so the settings screen can offer the same manual check the
+	 * Plugins row does, and report when the last check ran.
+	 *
+	 * @return object|null
+	 */
+	public function checker() {
+		return $this->checker;
 	}
 
 	/**
@@ -110,26 +148,39 @@ class Blt_Secure_Updater {
 	 * @return string|null
 	 */
 	public function token() {
+		// Last rung only: the shared row is consulted after this plugin's own
+		// resolution has failed, and BLT_Family::get() itself returns nothing
+		// unless the site owner opted this plugin into the 'github' group.
+		$shared = class_exists( 'BLT_Family' ) ? BLT_Family::get( 'blt-secure', 'github', 'token' ) : '';
+
 		return self::pick_token(
 			defined( 'BLT_SECURE_GITHUB_TOKEN' ) ? BLT_SECURE_GITHUB_TOKEN : null,
-			$this->store->get( self::TOKEN_KEY )
+			$this->store->get( self::TOKEN_KEY ),
+			$shared
 		);
 	}
 
 	/**
 	 * Token precedence — pure function (unit-tested): constant beats the
-	 * stored token; empty/non-string values fall through.
+	 * stored token, which beats the shared BLT family store; empty/non-string
+	 * values fall through.
 	 *
 	 * @param mixed $constant Value of the wp-config constant, if defined.
 	 * @param mixed $stored Value from the credential store.
+	 * @param mixed $shared Value from the shared BLT family store. Lowest
+	 *                      precedence, and optional so existing two-argument
+	 *                      callers keep their behavior.
 	 * @return string|null
 	 */
-	public static function pick_token( $constant, $stored ) {
+	public static function pick_token( $constant, $stored, $shared = null ) {
 		if ( is_string( $constant ) && '' !== $constant ) {
 			return $constant;
 		}
 		if ( is_string( $stored ) && '' !== $stored ) {
 			return $stored;
+		}
+		if ( is_string( $shared ) && '' !== $shared ) {
+			return $shared;
 		}
 		return null;
 	}

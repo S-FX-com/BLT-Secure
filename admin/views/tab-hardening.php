@@ -20,9 +20,11 @@ $blt_secure_opt       = Blt_Secure_Options::OPTION;
 <form method="post" action="options.php" class="blt-settings">
 	<?php settings_fields( 'blt_secure' ); ?>
 
-	<div class="blt-section">
-		<h2><?php esc_html_e( 'Security headers', 'blt-secure' ); ?></h2>
-
+	<div class="blt-card">
+		<div class="blt-card-header">
+			<h2><?php esc_html_e( 'Security headers', 'blt-secure' ); ?></h2>
+		</div>
+		<div class="blt-card-body">
 		<?php
 		blt_secure_setting_open(
 			__( 'Send security headers', 'blt-secure' ),
@@ -40,10 +42,12 @@ $blt_secure_opt       = Blt_Secure_Options::OPTION;
 				<div class="blt-subfields">
 					<label><?php esc_html_e( 'max-age (seconds):', 'blt-secure' ); ?>
 						<input type="number" name="<?php echo esc_attr( $blt_secure_opt ); ?>[headers][hsts_max_age]" value="<?php echo esc_attr( $blt_secure_headers['hsts_max_age'] ); ?>" class="small-text" style="width:120px;" /></label>
-					<label><input type="checkbox" name="<?php echo esc_attr( $blt_secure_opt ); ?>[headers][hsts_subdomains]" value="1" <?php checked( $blt_secure_headers['hsts_subdomains'] ); ?> />
-					<?php esc_html_e( 'includeSubDomains', 'blt-secure' ); ?></label>
-					<label><input type="checkbox" name="<?php echo esc_attr( $blt_secure_opt ); ?>[headers][hsts_preload]" value="1" <?php checked( $blt_secure_headers['hsts_preload'] ); ?> />
-					<?php esc_html_e( 'preload — effectively irreversible; only enable if you know what this means', 'blt-secure' ); ?></label>
+					<label class="blt-toggle"><input type="checkbox" name="<?php echo esc_attr( $blt_secure_opt ); ?>[headers][hsts_subdomains]" value="1" <?php checked( $blt_secure_headers['hsts_subdomains'] ); ?> />
+						<span class="blt-toggle-track" aria-hidden="true"><span class="blt-toggle-thumb"></span></span>
+						<span class="blt-toggle-text"><span class="blt-toggle-label"><?php esc_html_e( 'includeSubDomains', 'blt-secure' ); ?></span></span></label>
+					<label class="blt-toggle"><input type="checkbox" name="<?php echo esc_attr( $blt_secure_opt ); ?>[headers][hsts_preload]" value="1" <?php checked( $blt_secure_headers['hsts_preload'] ); ?> />
+						<span class="blt-toggle-track" aria-hidden="true"><span class="blt-toggle-thumb"></span></span>
+						<span class="blt-toggle-text"><span class="blt-toggle-label"><?php esc_html_e( 'preload — effectively irreversible; only enable if you know what this means', 'blt-secure' ); ?></span></span></label>
 				</div>
 			</div>
 			<div class="blt-setting-control">
@@ -87,8 +91,9 @@ $blt_secure_opt       = Blt_Secure_Options::OPTION;
 				<div class="blt-setting-title"><?php esc_html_e( 'Content-Security-Policy', 'blt-secure' ); ?></div>
 				<p class="blt-setting-desc"><?php esc_html_e( 'The strongest defense against cross-site scripting. Never sent inside wp-admin. Start in Report-Only mode and watch the browser console before enforcing.', 'blt-secure' ); ?></p>
 				<div class="blt-subfields">
-					<label><input type="checkbox" name="<?php echo esc_attr( $blt_secure_opt ); ?>[headers][csp_report_only]" value="1" <?php checked( $blt_secure_headers['csp_report_only'] ); ?> />
-					<strong><?php esc_html_e( 'Report-Only mode', 'blt-secure' ); ?></strong></label>
+					<label class="blt-toggle"><input type="checkbox" name="<?php echo esc_attr( $blt_secure_opt ); ?>[headers][csp_report_only]" value="1" <?php checked( $blt_secure_headers['csp_report_only'] ); ?> />
+						<span class="blt-toggle-track" aria-hidden="true"><span class="blt-toggle-thumb"></span></span>
+						<span class="blt-toggle-text"><span class="blt-toggle-label"><strong><?php esc_html_e( 'Report-Only mode', 'blt-secure' ); ?></strong></span></span></label>
 					<textarea name="<?php echo esc_attr( $blt_secure_opt ); ?>[headers][csp_policy]" rows="4" class="large-text code"><?php echo esc_textarea( $blt_secure_headers['csp_policy'] ); ?></textarea>
 				</div>
 			</div>
@@ -96,11 +101,14 @@ $blt_secure_opt       = Blt_Secure_Options::OPTION;
 				<?php blt_secure_toggle( $blt_secure_opt . '[headers][csp_enabled]', ! empty( $blt_secure_headers['csp_enabled'] ) ); ?>
 			</div>
 		</div>
+		</div>
 	</div>
 
-	<div class="blt-section">
-		<h2><?php esc_html_e( 'Privacy', 'blt-secure' ); ?></h2>
-
+	<div class="blt-card">
+		<div class="blt-card-header">
+			<h2><?php esc_html_e( 'Privacy', 'blt-secure' ); ?></h2>
+		</div>
+		<div class="blt-card-body">
 		<?php
 		blt_secure_setting_open( __( 'Hide the WordPress version', 'blt-secure' ), __( 'Removes the generator meta tag and the core ?ver= query strings that reveal your exact version.', 'blt-secure' ) );
 		blt_secure_setting_control();
@@ -112,22 +120,28 @@ $blt_secure_opt       = Blt_Secure_Options::OPTION;
 		blt_secure_toggle( $blt_secure_opt . '[privacy][block_enum]', ! empty( $blt_secure_privacy['block_enum'] ) );
 		blt_secure_setting_close();
 		?>
+		</div>
 	</div>
 
-	<div class="blt-section">
-		<h2><?php esc_html_e( 'XML-RPC', 'blt-secure' ); ?></h2>
-
+	<div class="blt-card">
+		<div class="blt-card-header">
+			<h2><?php esc_html_e( 'XML-RPC', 'blt-secure' ); ?></h2>
+		</div>
+		<div class="blt-card-body">
 		<?php
 		blt_secure_setting_open( __( 'Allow XML-RPC', 'blt-secure' ), __( 'Needed by Jetpack and the WordPress mobile apps. Leave off otherwise — it is abused for brute-force amplification and pingback DoS.', 'blt-secure' ) );
 		blt_secure_setting_control();
 		blt_secure_toggle( $blt_secure_opt . '[xmlrpc][enabled]', ! empty( $blt_secure_xmlrpc['enabled'] ) );
 		blt_secure_setting_close();
 		?>
+		</div>
 	</div>
 
-	<div class="blt-section">
-		<h2><?php esc_html_e( 'File guard', 'blt-secure' ); ?></h2>
-
+	<div class="blt-card">
+		<div class="blt-card-header">
+			<h2><?php esc_html_e( 'File guard', 'blt-secure' ); ?></h2>
+		</div>
+		<div class="blt-card-body">
 		<?php if ( defined( 'DISALLOW_FILE_EDIT' ) ) : ?>
 			<?php
 			blt_secure_setting_open(
@@ -155,7 +169,10 @@ $blt_secure_opt       = Blt_Secure_Options::OPTION;
 		blt_secure_toggle( $blt_secure_opt . '[fileguard][block_file_managers]', ! empty( $blt_secure_fileguard['block_file_managers'] ) );
 		blt_secure_setting_close();
 		?>
+		</div>
 	</div>
 
-	<?php submit_button(); ?>
+	<div class="blt-settings-footer">
+		<?php submit_button( null, 'primary blt-save-button', 'submit', false ); ?>
+	</div>
 </form>

@@ -54,6 +54,7 @@ class Blt_Secure_Admin {
 		$this->cf_state = new Blt_Secure_Cloudflare_State();
 
 		add_action( 'admin_menu', array( $this, 'register_menu' ) );
+		add_action( 'admin_head', array( $this, 'print_menu_icon_style' ) );
 		add_action( 'admin_init', array( $this, 'register_settings' ) );
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_assets' ) );
 		add_action( 'admin_notices', array( $this, 'salt_rotation_notice' ) );
@@ -117,7 +118,7 @@ class Blt_Secure_Admin {
 			'manage_options',
 			'blt-secure',
 			array( $this, 'render_page' ),
-			'dashicons-shield-alt',
+			BLT_Family_Brand::menu_icon( BLT_SECURE_DIR, 'dashicons-shield-alt' ),
 			81
 		);
 
@@ -132,6 +133,18 @@ class Blt_Secure_Admin {
 				array( $this, 'render_page' )
 			);
 		}
+	}
+
+	/**
+	 * Light the BLT mark up on hover the way a core dashicon does.
+	 *
+	 * WordPress paints an SVG icon_url as a background image and never
+	 * recolours it, so the shared helper restores the lit state with CSS.
+	 *
+	 * @return void
+	 */
+	public function print_menu_icon_style() {
+		BLT_Family_Brand::print_menu_icon_style( 'blt-secure' );
 	}
 
 	/**
@@ -217,7 +230,10 @@ class Blt_Secure_Admin {
 			return;
 		}
 
-		wp_enqueue_style( 'blt-secure-admin', BLT_SECURE_URL . 'admin/css/admin.css', array(), BLT_SECURE_VERSION );
+		// Shared BLT design system first: admin.css layers this screen's own
+		// layout on top of it, and only on our own pages.
+		wp_enqueue_style( 'blt-secure-design-system', BLT_SECURE_URL . 'assets/css/blt-design-system.css', array(), BLT_SECURE_VERSION );
+		wp_enqueue_style( 'blt-secure-admin', BLT_SECURE_URL . 'admin/css/admin.css', array( 'blt-secure-design-system' ), BLT_SECURE_VERSION );
 		wp_enqueue_script( 'blt-secure-admin', BLT_SECURE_URL . 'admin/js/admin.js', array(), BLT_SECURE_VERSION, true );
 		wp_localize_script(
 			'blt-secure-admin',
@@ -334,6 +350,7 @@ class Blt_Secure_Admin {
 		}
 
 		$options   = $this->plugin->options;
+		$updater   = $this->plugin->updater;
 		$cf_state  = $this->cf_state;
 		$store     = $this->plugin->credentials;
 		$whitelist = $this->plugin->whitelist;
@@ -404,8 +421,8 @@ class Blt_Secure_Admin {
 	 * @return Blt_Secure_Cloudflare_Deployer|WP_Error
 	 */
 	private function deployer() {
-		$token = $this->plugin->credentials->get( 'cf_token' );
-		if ( ! is_string( $token ) || '' === $token ) {
+		$token = Blt_Secure_Cloudflare_Api::resolve_token( $this->plugin->credentials );
+		if ( '' === $token ) {
 			return new WP_Error( 'blt_cf_no_token', __( 'No Cloudflare token is configured.', 'blt-secure' ) );
 		}
 		return new Blt_Secure_Cloudflare_Deployer( new Blt_Secure_Cloudflare_Api( $token ), $this->cf_state );
