@@ -142,9 +142,10 @@ class Blt_Secure_Ioc implements Blt_Secure_Module {
 	 */
 	public function run_sync() {
 		require_once BLT_SECURE_DIR . 'includes/feeds/class-ioc-parser.php';
+		require_once BLT_SECURE_DIR . 'includes/cloudflare/class-cloudflare-api.php';
 
-		$token = $this->credentials->get( 'cf_token' );
-		if ( ! is_string( $token ) || '' === $token ) {
+		$token = Blt_Secure_Cloudflare_Api::resolve_token( $this->credentials );
+		if ( '' === $token ) {
 			return $this->store( array( 'status' => 'no_token' ) );
 		}
 

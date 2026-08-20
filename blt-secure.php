@@ -3,11 +3,11 @@
  * Plugin Name:       BLT Secure
  * Plugin URI:        https://s-fx.com/plugins/blt-secure/
  * Description:       WordPress hardening with Cloudflare edge enforcement — login protection, 2FA, security headers, and one-click WAF deployment.
- * Version:           1.0.10
+ * Version:           1.1.0
  * Requires at least: 6.0
  * Requires PHP:      7.4
- * Author:            S-FX.com Small Business Solutions
- * Author URI:        https://s-fx.com/
+ * Author:            S-FX.com
+ * Author URI:        https://www.s-fx.com
  * License:           GPL v2 or later
  * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
  * Text Domain:       blt-secure
@@ -20,10 +20,29 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'BLT_SECURE_VERSION', '1.0.10' );
+define( 'BLT_SECURE_VERSION', '1.1.0' );
 define( 'BLT_SECURE_FILE', __FILE__ );
 define( 'BLT_SECURE_DIR', plugin_dir_path( __FILE__ ) );
 define( 'BLT_SECURE_URL', plugin_dir_url( __FILE__ ) );
+
+/*
+ * Shared BLT family layer: the BLT mark, the family update policy, and the
+ * opt-in shared credential store. Registered during load (not on a hook) so
+ * the registry is complete before the library boots on plugins_loaded, and
+ * before Blt_Secure_Updater calls BLT_Family_Updates::apply().
+ */
+require_once BLT_SECURE_DIR . 'includes/blt-family/bootstrap.php';
+
+blt_family_register(
+	BLT_SECURE_FILE,
+	array(
+		'name'    => 'BLT Secure',
+		'slug'    => 'blt-secure',
+		'version' => BLT_SECURE_VERSION,
+		'menu'    => 'blt-secure',
+		'groups'  => array( 'github', 'cloudflare' ),
+	)
+);
 
 require_once BLT_SECURE_DIR . 'includes/interface-blt-module.php';
 require_once BLT_SECURE_DIR . 'includes/class-options.php';

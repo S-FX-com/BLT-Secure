@@ -15,7 +15,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 $blt_secure_zone      = $cf_state->zone();
-$blt_secure_has_token = is_string( $store->get( 'cf_token' ) );
+$blt_secure_has_token = '' !== Blt_Secure_Cloudflare_Api::resolve_token( $store );
 $blt_secure_connected = $blt_secure_has_token && ! empty( $blt_secure_zone['zone_id'] );
 ?>
 <div class="blt-cf">
@@ -32,31 +32,29 @@ $blt_secure_connected = $blt_secure_has_token && ! empty( $blt_secure_zone['zone
 			<?php esc_html_e( 'Create a custom API token at dash.cloudflare.com → My Profile → API Tokens with: Zone → Zone: Read, Zone → Zone WAF: Edit (scoped to this site’s zone). Add Account → Access: Apps and Policies: Edit only if you want the Cloudflare Access feature.', 'blt-secure' ); ?>
 		</p>
 
-		<table class="form-table" role="presentation">
-			<tr>
-				<th scope="row"><label for="blt-cf-token"><?php esc_html_e( 'API token', 'blt-secure' ); ?></label></th>
-				<td>
-					<?php if ( $blt_secure_connected ) : ?>
-						<p id="blt-cf-status">
-							<span class="blt-badge blt-badge-ok">✓</span>
-							<?php
-							printf(
-								/* translators: 1: zone name, 2: plan name */
-								esc_html__( 'Connected to zone %1$s (%2$s plan). The token is stored encrypted.', 'blt-secure' ),
-								'<strong>' . esc_html( $blt_secure_zone['zone_name'] ) . '</strong>',
-								esc_html( $blt_secure_zone['plan'] ? $blt_secure_zone['plan'] : 'unknown' )
-							);
-							?>
-						</p>
-						<button type="button" class="button" id="blt-cf-disconnect"><?php esc_html_e( 'Disconnect (forget token)', 'blt-secure' ); ?></button>
-					<?php else : ?>
-						<input type="password" id="blt-cf-token" class="regular-text" autocomplete="off" placeholder="<?php esc_attr_e( 'Paste your zone-scoped API token', 'blt-secure' ); ?>" />
-						<button type="button" class="button button-primary" id="blt-cf-connect"><?php esc_html_e( 'Verify & save', 'blt-secure' ); ?></button>
-						<p id="blt-cf-status" class="description"></p>
-					<?php endif; ?>
-				</td>
-			</tr>
-		</table>
+		<div class="blt-field">
+			<div class="blt-field-label"><label for="blt-cf-token"><?php esc_html_e( 'API token', 'blt-secure' ); ?></label></div>
+			<div>
+				<?php if ( $blt_secure_connected ) : ?>
+					<p id="blt-cf-status">
+						<span class="blt-badge blt-badge-ok">✓</span>
+						<?php
+						printf(
+							/* translators: 1: zone name, 2: plan name */
+							esc_html__( 'Connected to zone %1$s (%2$s plan). The token is stored encrypted.', 'blt-secure' ),
+							'<strong>' . esc_html( $blt_secure_zone['zone_name'] ) . '</strong>',
+							esc_html( $blt_secure_zone['plan'] ? $blt_secure_zone['plan'] : 'unknown' )
+						);
+						?>
+					</p>
+					<button type="button" class="button" id="blt-cf-disconnect"><?php esc_html_e( 'Disconnect (forget token)', 'blt-secure' ); ?></button>
+				<?php else : ?>
+					<input type="password" id="blt-cf-token" class="regular-text" autocomplete="off" placeholder="<?php esc_attr_e( 'Paste your zone-scoped API token', 'blt-secure' ); ?>" />
+					<button type="button" class="button button-primary" id="blt-cf-connect"><?php esc_html_e( 'Verify & save', 'blt-secure' ); ?></button>
+					<p id="blt-cf-status" class="description"></p>
+				<?php endif; ?>
+			</div>
+		</div>
 
 		<h2><?php esc_html_e( 'Edge protections', 'blt-secure' ); ?></h2>
 		<?php if ( ! $blt_secure_connected ) : ?>
@@ -106,9 +104,12 @@ $blt_secure_connected = $blt_secure_has_token && ! empty( $blt_secure_zone['zone
 							<input type="text" id="blt-countries-input" class="blt-countries regular-text" value="<?php echo esc_attr( implode( ', ', $blt_secure_countries ) ); ?>" placeholder="<?php esc_attr_e( 'e.g. CN, RU, KP', 'blt-secure' ); ?>" />
 						</p>
 						<p class="blt-country-controls">
-							<label>
+							<label class="blt-toggle">
 								<input type="checkbox" class="blt-country-login-only" <?php checked( $blt_secure_login_only ); ?> />
-								<?php esc_html_e( 'Only block the login endpoints (visitors from these countries can still view the site)', 'blt-secure' ); ?>
+								<span class="blt-toggle-track" aria-hidden="true"><span class="blt-toggle-thumb"></span></span>
+								<span class="blt-toggle-text">
+									<span class="blt-toggle-label"><?php esc_html_e( 'Only block the login endpoints (visitors from these countries can still view the site)', 'blt-secure' ); ?></span>
+								</span>
 							</label>
 						</p>
 					<?php endif; ?>

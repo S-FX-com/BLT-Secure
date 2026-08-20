@@ -23,5 +23,11 @@
         "allow-plugins": {
             "dealerdirect/phpcodesniffer-composer-installer": true
         }
-    }
+    },
+    "authors": [
+        {
+            "name": "S-FX.com",
+            "homepage": "https://www.s-fx.com"
+        }
+    ]
 }

@@ -36,11 +36,48 @@ class Blt_Secure_Cloudflare_State {
 	/**
 	 * Zone identity (zone_id, account_id, plan, host).
 	 *
+	 * The account id and host may be borrowed from the shared BLT family
+	 * store when this site has not discovered them yet — see the comment
+	 * below for why that borrow is strictly read-only.
+	 *
 	 * @return array
 	 */
 	public function zone() {
 		$state = $this->all();
-		return isset( $state['zone'] ) && is_array( $state['zone'] ) ? $state['zone'] : array();
+		$zone  = isset( $state['zone'] ) && is_array( $state['zone'] ) ? $state['zone'] : array();
+
+		/*
+		 * Shared-store fallback, READ-ONLY and gap-filling only: the borrowed
+		 * values exist in the array we hand back and nowhere else.
+		 *
+		 * NEVER call set_zone() with a shared value. Zone discovery —
+		 * Blt_Secure_Cloudflare_Deployer::connect(), over
+		 * Blt_Secure_Cloudflare_Api::discover_zone() — is the sole writer of
+		 * this state, and it writes only what Cloudflare itself reported for
+		 * this site's own zone. Injecting a shared account_id into the stored
+		 * state could make the IOC deployer PUT list items into the WRONG
+		 * Cloudflare account.
+		 *
+		 * zone_id is deliberately never borrowed: it is what every
+		 * "is Cloudflare connected?" gate keys on, and it is only ever real
+		 * if this site discovered it.
+		 */
+		if ( class_exists( 'BLT_Family' ) ) {
+			if ( empty( $zone['account_id'] ) ) {
+				$shared_account = BLT_Family::get( 'blt-secure', 'cloudflare', 'account_id' );
+				if ( '' !== $shared_account ) {
+					$zone['account_id'] = $shared_account;
+				}
+			}
+			if ( empty( $zone['host'] ) ) {
+				$shared_host = BLT_Family::get( 'blt-secure', 'cloudflare', 'zone_host' );
+				if ( '' !== $shared_host ) {
+					$zone['host'] = $shared_host;
+				}
+			}
+		}
+
+		return $zone;
 	}
 
 	/**

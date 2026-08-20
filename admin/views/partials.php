@@ -14,7 +14,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 if ( ! function_exists( 'blt_secure_toggle' ) ) {
 	/**
 	 * Echo a toggle switch that wraps a real checkbox (so the Settings API
-	 * still receives the field).
+	 * still receives the field). Markup is the shared design system's
+	 * .blt-toggle component; the input's name/value/id are untouched.
 	 *
 	 * @param string $name    Full input name attribute.
 	 * @param bool   $checked Whether it is on.
@@ -27,7 +28,7 @@ if ( ! function_exists( 'blt_secure_toggle' ) ) {
 		$disabled = ! empty( $args['disabled'] );
 
 		printf(
-			'<label class="blt-switch"><input type="checkbox" %1$s name="%2$s" value="%3$s" %4$s %5$s /><span class="blt-slider"></span></label>',
+			'<label class="blt-toggle"><input type="checkbox" %1$s name="%2$s" value="%3$s" %4$s %5$s /><span class="blt-toggle-track" aria-hidden="true"><span class="blt-toggle-thumb"></span></span></label>',
 			$id ? 'id="' . esc_attr( $id ) . '"' : '',
 			esc_attr( $name ),
 			esc_attr( $value ),

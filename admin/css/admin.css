@@ -1,10 +1,31 @@
 /**
  * BLT Secure admin styles.
+ *
+ * Layered on top of the shared BLT design system
+ * (assets/css/blt-design-system.css, enqueued as this file's dependency).
+ * Components that now live there — cards, badges, toggles, tabs, the save
+ * bar — are NOT redefined here; what remains is this plugin's own layout,
+ * coloured through the design system's tokens.
  */
 
-.blt-secure-wrap .nav-tab-wrapper {
-	margin-bottom: 1.2em;
+/* Form-style cards keep the readable measure the family uses; the deploy-card
+   grid on the Cloudflare tab opts out below. */
+.blt-secure-wrap .blt-card,
+.blt-secure-wrap .blt-settings-footer,
+.blt-secure-wrap .blt-field {
+	max-width: 900px;
 }
+
+/* The shared toggle has no disabled state; File Guard renders one when
+   DISALLOW_FILE_EDIT is set in wp-config.php. */
+.blt-secure-wrap .blt-toggle input:disabled + .blt-toggle-track {
+	opacity: 0.5;
+	cursor: default;
+}
+
+/* -------------------------------------------------------------------------
+ * Cloudflare deploy cards (a grid of .blt-card, each driven by admin.js)
+ * ---------------------------------------------------------------------- */
 
 .blt-cards {
 	display: grid;
@@ -14,46 +35,37 @@
 	margin-top: 12px;
 }
 
-.blt-card {
-	background: #fff;
-	border: 1px solid #c3c4c7;
-	border-radius: 4px;
+.blt-cards .blt-card {
+	max-width: none;
+	margin-bottom: 0;
 	padding: 16px;
 	display: flex;
 	flex-direction: column;
 }
 
-.blt-card h3 {
+.blt-cards .blt-card h3 {
 	margin: 0 0 8px;
 }
 
-.blt-card p {
+.blt-cards .blt-card p {
 	margin: 0 0 12px;
 }
 
-.blt-card .blt-card-actions {
+.blt-cards .blt-card .blt-card-actions {
 	margin-top: auto;
 	margin-bottom: 0;
 }
 
-.blt-badge {
-	display: inline-block;
-	padding: 2px 8px;
-	border-radius: 10px;
-	background: #dcdcde;
-	color: #3c434a;
-	font-size: 12px;
-	font-weight: 600;
-}
-
+/* Status pills: the base .blt-badge is the shared component; these two are
+   this plugin's own states (admin.js writes both class names). */
 .blt-badge-ok {
-	background: #d5f5e3;
-	color: #00753a;
+	background: var(--blt-success-bg);
+	color: var(--blt-success-fg);
 }
 
 .blt-badge-warn {
-	background: #fcf0cd;
-	color: #8a6d00;
+	background: var(--blt-warning-bg);
+	color: var(--blt-warning-fg);
 }
 
 .blt-card-message {
@@ -66,41 +78,25 @@
 }
 
 /* -------------------------------------------------------------------------
- * Settings — section cards, setting rows, toggle switches
+ * Settings — setting rows inside a card
  * ---------------------------------------------------------------------- */
-
-.blt-section {
-	background: #fff;
-	border: 1px solid #c3c4c7;
-	border-radius: 6px;
-	margin: 0 0 20px;
-	max-width: 900px;
-}
-
-.blt-section > h2 {
-	margin: 0;
-	padding: 14px 20px;
-	border-bottom: 1px solid #e6e6e6;
-	font-size: 15px;
-}
-
-.blt-section-desc {
-	margin: 0;
-	padding: 12px 20px 0;
-	color: #646970;
-}
 
 .blt-setting {
 	display: flex;
 	gap: 24px;
 	align-items: flex-start;
 	justify-content: space-between;
-	padding: 16px 20px;
-	border-bottom: 1px solid #f0f0f1;
+	padding: 16px 0;
+	border-bottom: 1px solid var(--blt-surface-muted);
+}
+
+.blt-setting:first-child {
+	padding-top: 0;
 }
 
 .blt-setting:last-child {
 	border-bottom: 0;
+	padding-bottom: 0;
 }
 
 .blt-setting-info {
@@ -114,7 +110,7 @@
 }
 
 .blt-setting-desc {
-	color: #646970;
+	color: var(--blt-muted-fg);
 	margin: 0;
 	font-size: 13px;
 }
@@ -131,7 +127,7 @@
 .blt-subfields {
 	margin: 12px 0 0;
 	padding: 12px 0 0;
-	border-top: 1px dashed #e6e6e6;
+	border-top: 1px dashed var(--blt-border);
 	display: flex;
 	flex-direction: column;
 	gap: 10px;
@@ -139,60 +135,6 @@
 
 .blt-subfields label {
 	display: block;
-}
-
-/* Toggle switch (wraps a checkbox, keeps the native input for the form). */
-.blt-switch {
-	position: relative;
-	display: inline-block;
-	width: 44px;
-	height: 24px;
-	flex: 0 0 auto;
-}
-
-.blt-switch input {
-	position: absolute;
-	opacity: 0;
-	width: 0;
-	height: 0;
-}
-
-.blt-switch .blt-slider {
-	position: absolute;
-	inset: 0;
-	background: #c3c4c7;
-	border-radius: 24px;
-	transition: background-color 0.15s ease;
-	cursor: pointer;
-}
-
-.blt-switch .blt-slider::before {
-	content: "";
-	position: absolute;
-	height: 18px;
-	width: 18px;
-	left: 3px;
-	top: 3px;
-	background: #fff;
-	border-radius: 50%;
-	transition: transform 0.15s ease;
-}
-
-.blt-switch input:checked + .blt-slider {
-	background: #2271b1;
-}
-
-.blt-switch input:checked + .blt-slider::before {
-	transform: translateX(20px);
-}
-
-.blt-switch input:focus-visible + .blt-slider {
-	box-shadow: 0 0 0 2px #fff, 0 0 0 4px #2271b1;
-}
-
-.blt-switch input:disabled + .blt-slider {
-	opacity: 0.5;
-	cursor: default;
 }
 
 /* -------------------------------------------------------------------------
@@ -203,16 +145,16 @@
 	display: flex;
 	align-items: center;
 	gap: 28px;
-	background: #fff;
-	border: 1px solid #c3c4c7;
-	border-radius: 6px;
+	background: var(--blt-surface);
+	border: 1px solid var(--blt-border);
+	border-radius: var(--blt-radius);
 	padding: 20px 24px;
 	max-width: 720px;
 	margin: 12px 0 4px;
 }
 
 .blt-hc-scoreboard.blt-hc-empty {
-	color: #646970;
+	color: var(--blt-muted-fg);
 }
 
 .blt-hc-score {
@@ -223,7 +165,7 @@
 	width: 120px;
 	height: 120px;
 	border-radius: 50%;
-	border: 6px solid #dcdcde;
+	border: 6px solid var(--blt-border);
 	flex: 0 0 auto;
 }
 
@@ -237,7 +179,7 @@
 	font-size: 11px;
 	text-transform: uppercase;
 	letter-spacing: 0.04em;
-	color: #646970;
+	color: var(--blt-muted-fg);
 	margin-top: 6px;
 }
 
@@ -262,7 +204,7 @@
 .blt-hc-tallies li {
 	margin: 0;
 	font-size: 13px;
-	color: #646970;
+	color: var(--blt-muted-fg);
 }
 
 .blt-hc-tallies strong {
@@ -285,7 +227,7 @@
 }
 
 .blt-hc-meta {
-	color: #646970;
+	color: var(--blt-muted-fg);
 	font-style: italic;
 	margin: 4px 0 0;
 }
@@ -293,7 +235,7 @@
 .blt-hc-cat {
 	margin: 26px 0 8px;
 	font-size: 14px;
-	border-bottom: 1px solid #dcdcde;
+	border-bottom: 1px solid var(--blt-border);
 	padding-bottom: 6px;
 }
 
@@ -306,10 +248,10 @@
 	display: flex;
 	gap: 12px;
 	align-items: flex-start;
-	background: #fff;
-	border: 1px solid #e0e0e0;
+	background: var(--blt-surface);
+	border: 1px solid var(--blt-border);
 	border-left-width: 4px;
-	border-radius: 4px;
+	border-radius: var(--blt-radius-sm);
 	padding: 12px 14px;
 	margin-bottom: 6px;
 }
@@ -372,7 +314,7 @@
 }
 
 .blt-hc-details {
-	color: #646970;
+	color: var(--blt-muted-fg);
 	font-size: 12px;
 }
 
@@ -392,21 +334,21 @@
 }
 
 .blt-hc-filter:hover {
-	background: #f0f0f1;
+	background: var(--blt-neutral-bg);
 }
 
 .blt-hc-filter:focus-visible {
-	outline: 2px solid #2271b1;
+	outline: 2px solid var(--blt-primary);
 	outline-offset: 1px;
 }
 
 .blt-hc-filter.is-active {
-	background: #f0f6fc;
-	box-shadow: inset 0 0 0 2px #2271b1;
+	background: var(--blt-primary-tint);
+	box-shadow: inset 0 0 0 2px var(--blt-primary);
 }
 
 .blt-hc-noresults {
-	color: #646970;
+	color: var(--blt-muted-fg);
 	font-style: italic;
 	margin: 12px 0;
 }
@@ -441,8 +383,8 @@
 .blt-backup-url {
 	margin-top: 12px;
 	padding: 10px 12px;
-	background: #f6f7f7;
-	border: 1px solid #dcdcde;
+	background: var(--blt-surface-muted);
+	border: 1px solid var(--blt-border);
 	border-radius: 4px;
 	max-width: 520px;
 }

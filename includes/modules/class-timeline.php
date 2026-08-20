@@ -138,12 +138,13 @@ class Blt_Secure_Timeline implements Blt_Secure_Module {
 	 * @return array Stored payload (time, status, error, events).
 	 */
 	public function poll() {
-		$token = $this->credentials->get( 'cf_token' );
-		if ( ! is_string( $token ) || '' === $token ) {
+		require_once BLT_SECURE_DIR . 'includes/cloudflare/class-cloudflare-api.php';
+
+		$token = Blt_Secure_Cloudflare_Api::resolve_token( $this->credentials );
+		if ( '' === $token ) {
 			return $this->store( 'no_token', array(), '' );
 		}
 
-		require_once BLT_SECURE_DIR . 'includes/cloudflare/class-cloudflare-api.php';
 		require_once BLT_SECURE_DIR . 'includes/cloudflare/class-cloudflare-state.php';
 		require_once BLT_SECURE_DIR . 'includes/cloudflare/class-cf-events.php';
 

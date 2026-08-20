@@ -4,7 +4,9 @@
 /.distignore
 /.phpunit.result.cache
 /CLAUDE.md
+/DESIGN.md
 /README.md
+/blt-family-smoke.php
 /composer.json
 /composer.lock
 /dashboard

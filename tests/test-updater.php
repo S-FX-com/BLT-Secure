@@ -28,6 +28,27 @@ class Test_Updater extends TestCase {
 		$this->assertNull( Blt_Secure_Updater::pick_token( false, 0 ) );
 	}
 
+	public function test_shared_store_is_the_lowest_rung() {
+		// Constant and own store both beat the shared BLT family value.
+		$this->assertSame( 'const_tok', Blt_Secure_Updater::pick_token( 'const_tok', 'stored_tok', 'shared_tok' ) );
+		$this->assertSame( 'stored_tok', Blt_Secure_Updater::pick_token( null, 'stored_tok', 'shared_tok' ) );
+		$this->assertSame( 'stored_tok', Blt_Secure_Updater::pick_token( '', 'stored_tok', 'shared_tok' ) );
+	}
+
+	public function test_shared_store_used_only_when_nothing_local() {
+		$this->assertSame( 'shared_tok', Blt_Secure_Updater::pick_token( null, null, 'shared_tok' ) );
+		$this->assertSame( 'shared_tok', Blt_Secure_Updater::pick_token( '', '', 'shared_tok' ) );
+		$this->assertSame( 'shared_tok', Blt_Secure_Updater::pick_token( false, 0, 'shared_tok' ) );
+	}
+
+	public function test_shared_store_empty_or_absent_still_yields_null() {
+		$this->assertNull( Blt_Secure_Updater::pick_token( null, null, '' ) );
+		$this->assertNull( Blt_Secure_Updater::pick_token( null, null, null ) );
+		$this->assertNull( Blt_Secure_Updater::pick_token( '', '', false ) );
+		// The third argument is optional: two-argument callers are unchanged.
+		$this->assertNull( Blt_Secure_Updater::pick_token( null, null ) );
+	}
+
 	public function test_asset_regex_accepts_ci_zips() {
 		$this->assertMatchesRegularExpression( Blt_Secure_Updater::ASSET_REGEX, 'blt-secure-0.2.3.zip' );
 		$this->assertMatchesRegularExpression( Blt_Secure_Updater::ASSET_REGEX, 'blt-secure-10.0.12.zip' );

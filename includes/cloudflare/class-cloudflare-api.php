@@ -27,6 +27,11 @@ class Blt_Secure_Cloudflare_Api {
 	const BASE = 'https://api.cloudflare.com/client/v4';
 
 	/**
+	 * Credential-store key the Cloudflare API token is stored under.
+	 */
+	const TOKEN_KEY = 'cf_token';
+
+	/**
 	 * API token.
 	 *
 	 * @var string
@@ -49,6 +54,35 @@ class Blt_Secure_Cloudflare_Api {
 	public function __construct( $token, $transport = null ) {
 		$this->token     = (string) $token;
 		$this->transport = $transport ? $transport : 'wp_remote_request';
+	}
+
+	/**
+	 * The effective Cloudflare API token for this site, or '' when none.
+	 *
+	 * The single place the Cloudflare token is resolved — the admin
+	 * deployer, the Cloudflare tab, the IOC sync and the timeline poll all
+	 * come through here, so the precedence below is defined once.
+	 *
+	 * Precedence: this plugin's own encrypted credential row, then the
+	 * shared BLT family store (opt-in per plugin, off by default). The
+	 * fallback lives here and NOT inside Blt_Secure_Encrypted_Option_Store:
+	 * that store also holds single-consumer secrets (the Slack webhook, the
+	 * fleet enrollment token, the GitHub updates token), and a blanket
+	 * fallback in its get() would make every one of them resolve from the
+	 * shared row.
+	 *
+	 * @param Blt_Secure_Credential_Store $store Credential store.
+	 * @return string
+	 */
+	public static function resolve_token( Blt_Secure_Credential_Store $store ) {
+		$token = $store->get( self::TOKEN_KEY );
+		$token = is_string( $token ) ? $token : '';
+
+		if ( '' === $token && class_exists( 'BLT_Family' ) ) {
+			$token = (string) BLT_Family::get( 'blt-secure', 'cloudflare', 'api_token' );
+		}
+
+		return $token;
 	}
 
 	/**
