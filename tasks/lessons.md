@@ -59,3 +59,67 @@ must never resolve from a shared row), and `Blt_Secure_Cloudflare_State::zone()`
 gap-fills `account_id` / `host` in the array it returns only. Nothing borrowed
 is ever handed to `set_zone()`: a shared `account_id` in stored state would let
 the IOC deployer PUT list items into someone else's Cloudflare account.
+
+## Review pass 2026-11-16 — authentication
+
+- **A `WP_Error` returned at `authenticate` priority 1 is thrown away.** Core's `wp_authenticate_username_password` (priority 20) returns early only for a `WP_User`; with non-empty credentials it re-authenticates and a correct password wins. The old lockout therefore never blocked a login. Enforce at `wp_authenticate_user` (runs before the hash check) **and** at `authenticate` priority 99. Check the lock before the 2FA interstitial (priority 50), which also bypasses a priority-99 guard.
+- **Lockout keyed on username alone is a remote admin-lockout** once it really blocks. Key on client IP (IPv6 reduced to /64) and the (IP, username) pair; a per-username counter may alert but must not block.
+- **`$_REQUEST` at `plugins_loaded` is not what `wp-login.php` will see.** Compare raw GET+POST values: `sanitize_key`/`wp_unslash` can turn `POSTPASS` into an allowed action while core falls through to the login form.
+- **`wp_parse_url('//wp-login.php')` returns no path** (it is parsed as a host). Decide on the executing script (`SCRIPT_FILENAME`), not the URI.
+- **A hook added inside a POST handler that ends in a redirect is gone on the next request** (recovery codes were never shown). Register display hooks in `boot()`.
+- **`did_action()` is request-wide** — under `system.multicall` an application-password success for one user exempted another user from 2FA. Track the user ID per `authenticate()` run.
+- **`Plugin_Upgrader::install()` passes only `type` and `action` in `hook_extra`**; fresh installs must be checked in `upgrader_source_selection`.
+- **`<?=` or `<?` + whitespace appears by chance in high-entropy data** (about once per 2 MB): a naive "PHP open tag anywhere" check rejects zips and photos. Anchor on `<?php\s` or an executable `<?=`.
+- **`wp-login.php` calls `wp_signon()` with empty credentials on every visit**, and core's cookie handler answers with the logged-in user — a 2FA filter must ignore empty credentials.
+- **The `site_url` filter leaks a hidden slug** through the password-protected-post form, and core redirects `/login` to `wp_login_url()` on a 404.
+
+## Review pass 2026-11-16 — scanners
+
+- **A security gate must not trust a field the attacker controls.** The plugin `Version:` header was the "this is a legitimate update" signal for the baseline monitor; changing it re-baselined an infected plugin silently. Trust an upgrader event or wp.org checksums.
+- **`realpath()` on the final path component defeats symlink handling.** Resolve the parent directory and treat the last component as the object; deleting a symlink must unlink the link, never the target.
+- **Caps must count what the user can still act on** (post-whitelist) and must not let the noisiest root starve the rest — 250 SVGs in uploads hid a webshell in `plugins/`.
+- **`preg_match()` returning `false` is not "no match".** PCRE auto-optimisations hide catastrophic backtracking on long probes; test short "almost matches".
+- **Mime-only `AddType` and host-generated `AddHandler …-php74 .php` lines are legitimate.** Only a non-PHP extension mapped to a PHP handler is suspicious.
+- **A check that offers a fix must not make that fix create a scanner finding** — the uploads `index.php` fix produced a high-severity finding.
+- **`has_action()` is not "the output is hidden".** Judge the real filter output.
+- **`update_option()` returns false for both "unchanged" and "failed"** — verify large writes by reading back; split big arrays across rows (`max_allowed_packet`).
+- **Whitelist/ignore must act only on findings a scanner stored**, and derive scanner and label from the stored finding.
+
+## Review pass 2026-11-16 — Cloudflare
+
+- **Persist per-rule progress during a deploy, and make Remove key off the live entrypoint's `blt-secure-*` refs**, never stored ids alone: a failure on rule 3 of 5 left two live, untracked rules the UI could not remove.
+- **Access apps, IP lists and leaked-credential detections are account-wide and have no `ref`.** Scope their names by host, record created-vs-adopted, delete only what this plugin created. One site's Remove deleted another's app.
+- **Create an Access app with its policy inline.** An app with no policy denies everyone, and the UI had no way out.
+- **`self_hosted_domains` is past its sunset (2025-11-21); use `destinations`.**
+- **Cloudflare returns code 10000 ("Authentication error") with HTTP 403 for missing token scope** — test 403 before the 10000 code, and plan refusals before the generic 403.
+- **Choose the WAF tier from the zone plan, never from an error**; retire the other tier's refs on a transition.
+- **Free plan facts that shape the whole plugin** (https://developers.cloudflare.com/waf/): 5 custom rules; 1 rate-limiting rule with a 10 s period and 10 s block; custom leaked-credential detections are Enterprise-only (WordPress is already a default location; `password_leaked` only on Free); 1 custom list, 10,000 items **account-wide**. Budget the whole plugin: 2 (pack) + 1 (country) + 1 (leaked creds) + 1 (IOC) = 5.
+- **IP-list items must be IPv4 /8–/32 and IPv6 /12–/128, and the list `PUT` is asynchronous** — poll the bulk operation before reporting success; a failed or empty feed must never replace the list.
+- **A feed line of `0.0.0.0/0` would block the whole site at the edge.** Reject reserved/private/too-broad ranges and never block the site's own IP, the admin's IP, or Cloudflare's ranges.
+- **Form fields in a custom detection need `url_decode(http.request.body.form["x"][0])`**; `lookup_json_string` on a map is wrong.
+- **`is_admin()` is true for anonymous `admin-ajax.php` and `admin-post.php`** — gate the admin stack (and the CF classes it requires) on our own action prefix.
+- **A "request came from a Cloudflare IP" origin check is spoofable by other Cloudflare customers**; use a secret header added by a Transform Rule.
+
+## Review pass 2026-11-16 — admin, fleet, updater
+
+- **A settings-form sanitizer must keep keys the form does not render.** A disabled input or a conditionally hidden field posts nothing; render a hidden carrier. (Saving the Advanced tab silently turned the fleet schedule off for good.) A dead setting with no UI cannot be repaired by preserving it once a bug has stored a bad value — stop reading it.
+- **Never do network or mail I/O inside the alert hook.** Claim the throttle, `wp_schedule_single_event`, `spawn_cron()`. Log the event before firing the action or the snapshot misses it.
+- **`wp_clear_scheduled_hook()` skips events that carry args**; use `wp_unschedule_hook()`.
+- **PUC's `REQUIRE_RELEASE_ASSETS` still falls through to the latest-tag source zip** — filter `request_info_result` and guard `upgrader_pre_download`. PUC stores its state with `update_site_option`, so uninstall needs `delete_site_option`.
+- **Enumerate credential keys or contract-test them**, or a salt rotation leaves stale rows that later wipe a re-entered token. The rotation flag must be persistent: the request that detects it is often cron or a heartbeat.
+- **Do not trust `Cf-Access-Authenticated-User-Email`** — verify the `Cf-Access-Jwt-Assertion` JWT (RS256, `aud`, `iss`, `exp`) and fail closed when unconfigured.
+- **A signature keyed with the same secret that travels as the bearer adds nothing.** Derive the signing key; better, use BLT Connect.
+- **Contract tests earn their keep:** every emitted high-signal slug is alerted or deliberately routine; every `Blt_Secure_*` option constant is purged by `uninstall.php` (it caught three options added by other agents the same day).
+
+## Tooling
+
+- **Composer scripts refuse to run as root** ("Do not run Composer as root"): call `vendor/bin/phpunit` / `vendor/bin/phpcs` directly, and register the WPCS paths with `phpcs --config-set installed_paths`.
+- **PHPCompatibility cannot gate PHP 8 syntax here.** 9.x has no sniff for `match`, `?->`, union types, `fdiv()` or `get_debug_type()` (verified with a probe: it reported nothing); 10.x needs PHP_CodeSniffer 4, which WPCS does not support. `tests/test-php74-compat.php` reads the token stream instead. **Always prove a gate fails on a known-bad input** — a gate that checks nothing looks identical to a gate that passes.
+- **Review agents' findings are hypotheses.** Several were confirmed by a reproduction (the upload regex flagged 11/20 random 2 MB blobs), one of mine was a shell-quoting artefact. Reproduce before fixing.
+
+## Buoy link
+
+- **BLT Connect is the only transport between a site and Buoy.** BLT Secure exposes local, read-only filters the agent applies during an authenticated `inventory.read`; it adds no network code, credentials or routes. Do not point `Blt_Secure_Fleet`'s bearer/HMAC channel at Buoy.
+- **Buoy's `critical` severity opens an incident, marks backups suspect and blocks automated updates until a person triages it — and Buoy has no triage UI yet.** The bridge caps severity at `high` (`blt_secure_buoy_allow_critical` to lift it) so a regex heuristic cannot freeze updates on a client site.
+- **A findings list is only "complete" if nothing was cut and every scanner ran.** The bridge sends ≤199 findings plus a `blt_secure:truncated` sentinel (also when any scan result is missing, errored or partial); Buoy resolves absent findings only from a complete list.
+- **A change to Buoy that adds a command touches the `[HARD]` vocabulary** (`commands.ts`, the literal `Dispatch.php` match, vectors, both test suites, a DECISIONS entry with Shane's written approval). Prefer riding existing payloads.

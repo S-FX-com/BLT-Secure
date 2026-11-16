@@ -13,14 +13,16 @@
 - The updater trusts TLS + GitHub account integrity only; nothing verifies the downloaded zip.
   Buoy's agent already does this properly (Ed25519-signed zips).
 
+## Status
+Steps 1 and 2 are **done**: `.github/workflows/ci.yml` runs lint + the suite on PHP 7.4–8.4 (phpcs once), and
+the 7.4 gate is `tests/test-php74-compat.php` — PHPCompatibility was tried and cannot see PHP 8 (9.x has no PHP 8
+sniffs; 10.x needs PHP_CodeSniffer 4, which WPCS does not support), so do not add it. Remaining: steps 3 and 4.
+
 ## Steps
-1. **`.github/workflows/ci.yml`** on `pull_request` and `push`: matrix PHP `7.4, 8.0, 8.1, 8.2, 8.3, 8.4`
+1. **(done) `.github/workflows/ci.yml`** on `pull_request` and `push`: matrix PHP `7.4, 8.0, 8.1, 8.2, 8.3, 8.4`
    → `composer install`, `composer lint`, `composer phpcs`, `composer test`; plus a Node job
    running `cd dashboard && node --test` while `dashboard/` exists. Set `sodium` and `openssl` extensions.
-2. **PHP compatibility sniff.** Add dev dependency `phpcompatibility/phpcompatibility-wp`; in
-   `phpcs.xml.dist` add `<config name="testVersion" value="7.4-"/>` and
-   `<rule ref="PHPCompatibilityWP"/>`. Fix every violation it reports in plugin code (not
-   `includes/lib/`, not `includes/blt-family/` — report those). Keep the sniff on `tests/` off.
+2. **(done, different tool) PHP 7.4 gate** — `tests/test-php74-compat.php` (token-level, no dependencies).
 3. **Release workflow.** Make `release.yml` depend on CI success (`workflow_run` or a reusable
    workflow). Order: determine bump → build zip → verify zip → **then** commit/tag/push. Use an
    annotated tag created by the workflow itself at the built commit. Parse bump level from the
@@ -39,7 +41,7 @@
 5. Document the ceremony in `tasks/lessons.md`.
 
 ## Done when
-- A PR that adds `match`/`str_contains` fails CI on the 7.4 job.
+- A PR that adds `match`/`fdiv()`/union types fails CI (the compat test) and on the 7.4 job.
 - A PR with a failing test cannot produce a release.
 - A release zip without a valid `.sig` is refused by a site; a tampered zip is refused.
 - A build failure leaves `main` un-bumped.

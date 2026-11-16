@@ -144,3 +144,62 @@
 
 - [ ] Country block: list `T1` (Tor) + one country on the card → Deploy → confirm the rule appears in the CF dashboard custom rules with the exact expression; toggle login-only + redeploy → expression now scoped to login paths; visit via a VPN exit in a blocked country → 403 edge block (site-wide) or block only on wp-login.php (login-only); Remove → rule gone; junk codes ("USA", "12") are dropped and an empty selection refuses to deploy.
 - [ ] Deploy all: fresh zone + token → one click → WAF, custom pack, rate limit, leaked creds all deploy with green badges; country card skipped while empty; Access card untouched; break the token scope for one feature → run completes, summary shows "1 card(s) failed", the failing card carries the scope hint.
+
+## Phase 6 — Security review hardening (complete — 2026-11-16)
+
+> A line-by-line review (login/2FA, scanners/feeds/health, Cloudflare, admin/crypto/fleet/updater)
+> found real defects; every high-severity one was confirmed against WordPress core source, current
+> Cloudflare docs, or a reproduction before it was fixed. Test suite: 247 → 585. Details and the
+> full list of what was deferred: `tasks/hardening-plan.md`.
+
+- [x] **Login lockout actually blocks** — enforced at `wp_authenticate_user` (before the hash) and `authenticate` priority 99.
+  - AC: a correct password during a lockout is rejected; keys are client IP (IPv6 /64) and (IP, username) so spraying one account cannot lock the real admin out; per-username counter only alerts; fixed window; `tests/test-lockout.php` asserts both enforcement points even when handed a `WP_User`.
+- [x] **2FA hardening** — per-user failure throttle (10/15 min), bad codes feed `wp_login_failed`, recovery codes actually displayed, no `system.multicall` bypass, no re-prompt for an already logged-in user, disabling needs proof.
+- [x] **Hidden login slug** — raw action compare, decide on the executing script (`//wp-login.php`, `/wp-login.php/x`), siteurl ≠ home, no slug leak via `/login` redirects or the postpass form.
+- [x] **Upload guard false positives** — `<?php\s` / executable `<?=` only (the old pattern flagged ~half of random 2 MB blobs); sideloads guarded; file-manager blocker fires on fresh installs and activation.
+- [x] **Cloudflare plan-awareness** — Free rate limit 10s/10s; WAF tier from the zone plan; leaked-credentials by plan; pre-deploy budget (5/20/100 custom rules); `destinations` for Access; policy created inline; per-rule progress persisted; ref-based remove; host-scoped account objects with created-vs-adopted tracking; host-drift guard; bounded 429 retry; IOC bulk-operation polling, prefix clamping, failed-feed protection, never-block list.
+  - AC: whole plugin fits a clean Free zone in 5 custom rules (asserted in `tests/test-cf-deployer-safety.php`); no `PUT` ever hits a ruleset entrypoint; Remove deletes only `blt-secure-*` refs.
+- [x] **Scanners** — oversize PHP, whitelist-before-cap, symlinks/root files, 21 signatures (0 false positives over 4,643 real files), time budget + lock, delete never follows a symlink, baseline no longer re-baselines on a bumped Version header, unmonitored trees surfaced, `index.php` fix no longer self-flags, health checks reflect real output.
+- [x] **Fleet / alerting / credentials / updater** — schedule no longer clobbered by the form, alert I/O deferred to WP-Cron, stale alert slugs fixed (contract-tested), salt-rotation covers every credential and persists, updater refuses source zips, Slack host allowlist, admin stack not loaded on anonymous AJAX, uninstall contract test, legacy Worker verifies the Access JWT and fails closed.
+- [x] **"Ignore" only acts on stored findings** — scanner and label derived from the stored finding.
+- [x] **CI + PHP 7.4 gate** — `.github/workflows/ci.yml` (PHP 7.4–8.4), `tests/test-php74-compat.php` (token-level; PHPCompatibility was tried and cannot see PHP 8 — see lessons).
+
+### Manual smoke additions (cannot be covered by unit tests — run before tagging)
+
+- [ ] **Lockout, real WordPress:** 5 wrong passwords for `admin` from your IP → the 6th attempt with the CORRECT password is refused; a different IP can still log in as `admin`; the lock clears after the window.
+- [ ] **2FA:** enrol → the 8 recovery codes are shown after saving the profile; 10 wrong codes → 2FA locks for that user and an alert fires; turning 2FA off asks for password/code.
+- [ ] **Slug:** with a slug set, `/wp-login.php?action=POSTPASS`, `//wp-login.php` and `/wp-login.php/x` all 404; a password-protected post still unlocks; `/login` no longer redirects to the slug.
+- [ ] **Uploads:** upload a 5 MB zip and a 10 MB JPEG → accepted; a file containing `<?php system($_GET[1]);` renamed `.jpg` → rejected.
+- [ ] **Free-zone smoke (never run before):** Free zone + token → "Deploy all" → every card either deploys or is skipped with a plan/budget explanation, nothing fails halfway; Remove clears everything; confirm in the dashboard that only `blt-secure-*` rules were touched. **Also verify on a throwaway zone:** Access app update (PUT with inline `policies`) does not duplicate policies.
+- [ ] **Leaked credentials:** Free zone → card deploys with `password_leaked`; Pro zone → `username_and_password_leaked`.
+- [ ] **Access:** deploy → wp-admin demands login; admin-post.php / admin-ajax.php stay open; a failed deploy leaves no app without a policy.
+- [ ] **IOC:** enable two feeds, break one URL → the edge list is NOT shrunk and the status says why.
+- [ ] **Scanner:** drop `eval(base64_decode($_POST['x']));` padded to 2.5 MB into `plugins/x/` → flagged; add 300 SVGs to uploads → the plugin webshell is still reported; symlink a directory under plugins → reported.
+- [ ] **Baseline:** edit a plugin file AND bump its `Version:` header → a `version_bump` finding, not a silent re-baseline; update the plugin through wp-admin → re-baselines without a finding.
+- [ ] **Updater:** make a release with no CI zip → the site refuses it instead of installing the source archive.
+- [ ] **Alerts:** trigger a lockout with the dashboard endpoint unreachable → the login request is not delayed; the alert arrives after the next cron tick.
+- [ ] **Legacy Worker:** without `ACCESS_TEAM_DOMAIN`/`ACCESS_AUD` the operator UI returns 503; with them, a request carrying only a forged `Cf-Access-Authenticated-User-Email` header is refused.
+
+## Phase 7 — Buoy link (BLT Connect is the only transport)
+
+- [x] **Stage 1 — findings** — `Blt_Secure_Buoy_Bridge` answers `blt_secure_findings`; Buoy auto-resolves non-critical findings absent from a complete list (DECISIONS D-2026-11-16-01).
+  - AC: `{severity,signature,path}` only; ≤199 + `blt_secure:truncated` sentinel; whitelisted excluded; `critical` capped at `high`; verified end to end against Buoy's real ingest. Spec: `specs/02-buoy-link-stage1-findings.md`.
+- [ ] **Stage 1 staging smoke** — both transports (poll and push), site enrolled in Buoy.
+- [ ] **Stage 2 — posture in inventory** (no new commands) — `specs/03-buoy-link-stage2-posture.md`.
+- [ ] **Findings triage in Buoy** — `specs/05-buoy-findings-triage.md` (prerequisite for ever sending `critical`).
+- [ ] **Stage 3 — `secure.*` commands** — ⛔ needs Shane's written approval (`[HARD]` vocabulary) — `specs/04-buoy-link-stage3-commands.md`.
+- [ ] **Retire the legacy fleet reporter and `dashboard/`** — after Stage 2 — `specs/06-retire-legacy-fleet.md`.
+
+## Phase 8 — Elite platform roadmap (each item has a build spec in `tasks/specs/`)
+
+- [ ] 01 CI hardening: SHA-pinned actions, test-gated and reordered release, signed release zips verified by the updater.
+- [ ] 07 Turnstile on login/register/lost-password/comments.
+- [ ] 08 Cloudflare: consolidated WordPress-attack rule, opt-in Bot Fight Mode, notifications runbook.
+- [ ] 09 Cloudflare zone audit (SSL/TLS, DNS, DNSSEC, email auth, cache, origin lock) and the two-token model.
+- [ ] 10 Vulnerability intelligence.
+- [ ] 11 wp.org checksum verification + stat-only file-change monitor.
+- [ ] 12 Resumable scanning + quarantine instead of delete.
+- [ ] 13 Enforced 2FA with grace period, admin reset, trusted device, passkeys.
+- [ ] 14 Persistent tamper-evident audit log.
+- [ ] 15 Sessions and credential hygiene.
+- [ ] 16 Database injection scanner.
