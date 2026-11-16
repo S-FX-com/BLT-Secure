@@ -117,6 +117,11 @@ the IOC deployer PUT list items into someone else's Cloudflare account.
 - **A capped loop must not skip the bookkeeping later passes depend on.** Breaking out of the checksum loop at the issue cap meant the "known files" set was incomplete, so the next pass flagged genuine core files. Stop the expensive work, keep collecting the cheap state.
 - **A progress write that replaces a record must carry forward what the previous record owned**, and every failure path must restore it — otherwise a failed redeploy orphans the live object it was updating.
 
+## Measuring a detector's false-positive rate
+
+- **Measure the pattern that actually shipped, over enough samples, and compute the expected rate.** The "0 of 60 random buffers" result for the upload guard was luck: a bare `<?=` plus one of `$`, backtick, `(`, `@` still flagged **1.33%** of random 8 MB buffers (4/300) — about one large JPEG or ZIP in 75 — and a different regex than the one in the code had been simulated. Estimate per-position probability × positions before trusting a small sample: a few-byte marker over megabytes of high-entropy data is a coin flip waiting to happen. Require structure (an expression, a boundary, a terminator) so chance bytes cannot satisfy it.
+- **A test that draws from `random_bytes()` can fail on any run** however low the real rate is, and CI multiplies the draws (7 jobs × several buffers). Use a fixed corpus (a SHA-256 stream) so the test always passes or always fails, and pin both sides: chance bytes are not a hit, real payloads still are.
+
 ## Tooling
 
 - **Composer scripts refuse to run as root** ("Do not run Composer as root"): call `vendor/bin/phpunit` / `vendor/bin/phpcs` directly, and register the WPCS paths with `phpcs --config-set installed_paths`.
