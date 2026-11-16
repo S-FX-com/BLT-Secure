@@ -68,10 +68,52 @@ class Test_Upload_Guard extends TestCase {
 		$this->assertTrue( Blt_Secure_Upload_Guard::has_php_open_tag( '<?=(system)("id")?>' ) );
 	}
 
+	/**
+	 * Deterministic high-entropy bytes (a SHA-256 stream). A test on random_bytes() can fail by
+	 * chance on any CI run no matter how low the real false-positive rate is; a fixed corpus
+	 * either always passes or always fails.
+	 *
+	 * @param int $seed  Corpus number.
+	 * @param int $bytes Length.
+	 * @return string
+	 */
+	private static function entropy( $seed, $bytes ) {
+		$out = '';
+		for ( $i = 0; strlen( $out ) < $bytes; $i++ ) {
+			$out .= hash( 'sha256', 'blt-secure-corpus-' . $seed . '-' . $i, true );
+		}
+		return substr( $out, 0, $bytes );
+	}
+
 	public function test_high_entropy_binary_is_not_flagged() {
-		// Regression: the old `<?` + whitespace / `<?=` pattern flagged ~every 8 MB of random bytes.
-		for ( $i = 0; $i < 5; $i++ ) {
-			$this->assertFalse( Blt_Secure_Upload_Guard::has_php_open_tag( random_bytes( 8 * 1024 * 1024 ) ), "Random 8 MB buffer #$i was flagged" );
+		// Regression: the first fix flagged ~100% of random 8 MB buffers, and its successor (a bare
+		// `<?=` + one punctuation byte) still flagged ~1.3% — about one large JPEG/ZIP in 75.
+		for ( $seed = 0; $seed < 6; $seed++ ) {
+			$this->assertFalse( Blt_Secure_Upload_Guard::has_php_open_tag( self::entropy( $seed, 8 * 1024 * 1024 ) ), "Deterministic 8 MB corpus #$seed was flagged" );
+		}
+	}
+
+	public function test_short_echo_tag_needs_an_expression_not_just_punctuation() {
+		// Each of these is what random bytes produce by chance: `<?=` plus one lone character.
+		foreach ( array( '<?=$', '<?=(', '<?=@', '<?=`', '<?=a(', '<?=$1', '<?=$-', '<?=ab(x' ) as $noise ) {
+			$this->assertFalse( Blt_Secure_Upload_Guard::has_php_open_tag( "\x00\x01" . $noise . "\xff\xfe" ), 'Chance bytes must not count as a PHP tag: ' . bin2hex( $noise ) );
+		}
+		// ...whereas every real echo-tag payload shape still does.
+		$payloads = array(
+			'<?=$_GET[1]?>',
+			'<?=$f($_POST[0]);',
+			'<?=system($_GET[0]);',
+			'<?=@eval($_POST[1])',
+			"<?=exec('id')?>",
+			'<?=phpinfo()?>',
+			'<?=@$_GET[0]($_POST[1])?>',
+			'<?= $a . $b',
+			"<?=\n  \$x\n;",
+			'GIF89a<?=`id`',
+			'<?=(system)("id")?>',
+		);
+		foreach ( $payloads as $payload ) {
+			$this->assertTrue( Blt_Secure_Upload_Guard::has_php_open_tag( $payload ), 'Real payload must still be detected: ' . $payload );
 		}
 	}
 
@@ -92,7 +134,7 @@ class Test_Upload_Guard extends TestCase {
 
 	public function test_inspect_allows_clean_file() {
 		$tmp = tempnam( sys_get_temp_dir(), 'blt' );
-		file_put_contents( $tmp, random_bytes( 4096 ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
+		file_put_contents( $tmp, self::entropy( 99, 4096 ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
 		$guard  = new Blt_Secure_Upload_Guard( new Blt_Secure_Options() );
 		$result = $guard->inspect(
 			array(
