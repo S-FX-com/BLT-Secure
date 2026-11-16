@@ -173,7 +173,12 @@ class Blt_Secure_Core_Scanner {
 			if ( ! self::in_scope( $path ) ) {
 				continue;
 			}
+			// Every in-scope manifest path is "known", even once verification has stopped: the
+			// unknown-file pass below must never see a genuine core file as an extra one.
 			$known[] = $path;
+			if ( $truncated ) {
+				continue; // Issue cap reached: stop verifying, keep collecting known paths.
+			}
 			if ( in_array( $path, $variant, true ) ) {
 				continue; // Locale-specific content; the en_US manifest cannot vouch for it.
 			}
@@ -193,7 +198,7 @@ class Blt_Secure_Core_Scanner {
 			}
 			if ( count( $issues ) >= self::MAX_ISSUES ) {
 				$truncated = true;
-				break;
+				continue;
 			}
 			$hash     = ( self::STATUS_MODIFIED === $status && is_string( $actual ) ) ? $actual : '';
 			$issues[] = array(

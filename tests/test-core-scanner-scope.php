@@ -116,6 +116,29 @@ class Test_Core_Scanner_Scope extends TestCase {
 		$this->assertSame( Blt_Secure_Core_Scanner::STATUS_UNKNOWN, $this->flagged( $payload )['wp-includes/backdoor.php'] );
 	}
 
+	public function test_truncated_manifest_pass_does_not_turn_unvisited_core_files_into_unknown() {
+		$scanner = new Blt_Test_Core_Scanner();
+		// Enough missing files to hit the issue cap well before the end of the manifest.
+		for ( $i = 0; $i < 400; $i++ ) {
+			$scanner->manifest[ "wp-includes/f{$i}.php" ] = md5( (string) $i );
+		}
+		// Genuine core files that sit AFTER the cap in manifest order, and a real extra file.
+		$late = array( 'wp-includes/zz-late-1.php', 'wp-includes/zz-late-2.php', 'wp-admin/zz-late-3.php' );
+		foreach ( $late as $path ) {
+			$scanner->manifest[ $path ] = md5( $path );
+		}
+		$scanner->on_disk = array_merge( $late, array( 'wp-includes/backdoor.php' ) );
+
+		$payload = $scanner->run();
+		$flagged = $this->flagged( $payload );
+
+		$this->assertTrue( $payload['truncated'] );
+		$this->assertSame( Blt_Secure_Core_Scanner::STATUS_UNKNOWN, $flagged['wp-includes/backdoor.php'], 'The real extra file is still caught.' );
+		foreach ( $late as $path ) {
+			$this->assertNotSame( Blt_Secure_Core_Scanner::STATUS_UNKNOWN, isset( $flagged[ $path ] ) ? $flagged[ $path ] : '', "{$path} is in the manifest, so it must never be reported as an unknown file." );
+		}
+	}
+
 	public function test_unknown_pass_has_its_own_allowance() {
 		$scanner = new Blt_Test_Core_Scanner();
 		for ( $i = 0; $i < 300; $i++ ) {

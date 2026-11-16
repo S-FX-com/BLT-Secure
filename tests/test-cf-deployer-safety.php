@@ -825,6 +825,38 @@ class Test_Cf_Deployer_Safety extends TestCase {
 		$this->assertNull( $state->deployment( 'access' ) );
 	}
 
+	public function test_failed_access_redeploy_keeps_the_existing_record_and_ownership() {
+		$cf       = new Blt_Test_Fake_Cf();
+		$state    = $this->state();
+		$deployer = $this->deployer( $cf, $state );
+		$first    = $deployer->deploy( 'access', array( 'emails' => array( 'one@example.org' ) ) );
+		$this->assertTrue( $first['app_owned'] );
+		$this->assertCount( 2, $cf->apps );
+
+		// Redeploy with a changed email; the MAIN app update is rejected while the bypass app
+		// already exists (so nothing was created this run and the bypass step is a no-op/update).
+		$main_id  = $first['app_id'];
+		$cf->fail = function ( $method, $path ) use ( $cf, $main_id ) {
+			if ( 'PUT' === $method && false !== strpos( $path, '/access/apps/' . $main_id ) ) {
+				return $cf->err( 500, 0, 'transient failure' );
+			}
+			return null;
+		};
+		$result = $this->deployer( $cf, $state )->deploy( 'access', array( 'emails' => array( 'two@example.org' ) ) );
+		$this->assertInstanceOf( WP_Error::class, $result );
+
+		// The live main app must still be tracked, and still owned, exactly as before.
+		$after = $state->deployment( 'access' );
+		$this->assertSame( $main_id, $after['app_id'], 'The live main app must not become untracked.' );
+		$this->assertTrue( $after['app_owned'], 'Ownership of the main app must not be lost.' );
+		$this->assertSame( $first['bypass_app_id'], $after['bypass_app_id'] );
+
+		// A later Remove deletes BOTH apps (nothing orphaned, nothing half-deleted).
+		$cf->fail = null;
+		$this->assertTrue( $this->deployer( $cf, $state )->remove( 'access' ) );
+		$this->assertCount( 0, $cf->apps, 'Remove after a failed redeploy must clean up both apps.' );
+	}
+
 	public function test_two_sites_in_one_account_never_adopt_or_delete_each_others_apps() {
 		$cf = new Blt_Test_Fake_Cf();
 

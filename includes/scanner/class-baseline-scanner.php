@@ -66,6 +66,67 @@ class Blt_Secure_Baseline_Scanner {
 	}
 
 	/**
+	 * Version of the hashed-file scope stored with each baseline. Baselines written by
+	 * releases before the scope widened carry no `scope` and are "legacy".
+	 *
+	 * 1 (implicit): PHP-family files up to 2 MB.
+	 * 2: also JS/JSON, server config files, more PHP extensions, files up to 16 MB.
+	 */
+	const SCOPE = 2;
+
+	/**
+	 * The size ceiling the legacy scope hashed under.
+	 */
+	const LEGACY_MAX_FILE_BYTES = 2097152;
+
+	/**
+	 * Whether a path was inside the LEGACY (scope 1) hashed set.
+	 *
+	 * Pure function (unit-tested).
+	 *
+	 * @param string $path File path.
+	 * @return bool
+	 */
+	public static function is_legacy_scope( $path ) {
+		$ext = strtolower( pathinfo( basename( str_replace( '\\', '/', (string) $path ) ), PATHINFO_EXTENSION ) );
+		return in_array( $ext, array( 'php', 'php3', 'php4', 'php5', 'php7', 'phtml', 'pht', 'inc' ), true );
+	}
+
+	/**
+	 * Diff a LEGACY baseline against hashes taken with the wider current scope.
+	 *
+	 * Comparing the two directly reports every unchanged JS/JSON/config file as "added" on
+	 * the first scan after an upgrade — false drift on nearly every plugin. Evidence about
+	 * what the old baseline DID cover is kept exactly: modified and removed paths are
+	 * reported as usual, and an added path counts only if the old scanner would have hashed it
+	 * (legacy extension and not over the old size ceiling). Everything else is newly covered
+	 * ground, initialised by the caller once nothing else changed.
+	 *
+	 * Pure apart from the injected size lookup (unit-tested).
+	 *
+	 * @param array    $baseline Stored legacy path => hash map.
+	 * @param array    $current  Current path => hash map.
+	 * @param callable $size_of  function( string $path ): int|null — on-disk size, or null if unknown.
+	 * @return array{added:string[],modified:string[],removed:string[]}
+	 */
+	public static function legacy_diff( array $baseline, array $current, $size_of ) {
+		$diff  = self::diff( $baseline, $current );
+		$added = array();
+		foreach ( $diff['added'] as $path ) {
+			if ( ! self::is_legacy_scope( $path ) ) {
+				continue; // Newly covered file type.
+			}
+			$size = call_user_func( $size_of, $path );
+			if ( null === $size || $size > self::LEGACY_MAX_FILE_BYTES ) {
+				continue; // The old scanner skipped it (too large) or it is gone.
+			}
+			$added[] = $path;
+		}
+		$diff['added'] = $added;
+		return $diff;
+	}
+
+	/**
 	 * Diff two path => hash maps.
 	 *
 	 * Pure function (unit-tested).

@@ -355,4 +355,128 @@ class Test_Baseline_Confirmation extends TestCase {
 		$this->assertArrayNotHasKey( 'hashes', $index['plugin/plug'] );
 		$this->assertSame( $hashes, get_option( Blt_Secure_Baseline::store_name( 'plugin/plug' ) ) );
 	}
+
+	// -------------------------------------------------------------------
+	// Upgrade from a baseline written under the narrower (scope 1) hash set.
+	// -------------------------------------------------------------------
+
+	/**
+	 * Write the baseline the PREVIOUS release would have: PHP-family files only, no `scope` stamp.
+	 *
+	 * @return array path => md5 as stored.
+	 */
+	private function seed_legacy_baseline() {
+		$hashes = array( 'plug.php' => md5_file( $this->dir . '/plug/plug.php' ) );
+		$GLOBALS['blt_test_options'][ Blt_Secure_Baseline::BASELINE_OPTION ]                         = array(
+			'plugin/plug' => array(
+				'version' => '1.0',
+				'trust'   => 'wporg_checksums',
+				'time'    => 1700000000,
+				'checked' => 1700000000,
+				'count'   => 1,
+			),
+		);
+		$GLOBALS['blt_test_options'][ Blt_Secure_Baseline::store_name( 'plugin/plug' ) ] = $hashes;
+		return $hashes;
+	}
+
+	public function test_legacy_diff_ignores_newly_covered_file_types_and_oversize_files() {
+		$baseline = array( 'plug.php' => 'a' );
+		$current  = array(
+			'plug.php'    => 'a',
+			'app.js'      => 'j',     // Newly covered type.
+			'.htaccess'   => 'h',     // Newly covered name.
+			'new.php'     => 'n',     // Old scope, small: a real addition.
+			'huge.php'    => 'g',     // Old scope but over 2 MB: the old scanner skipped it.
+			'gone-now.js' => 'x',
+		);
+		$sizes    = array(
+			'new.php'  => 100,
+			'huge.php' => Blt_Secure_Baseline_Scanner::LEGACY_MAX_FILE_BYTES + 1,
+		);
+		$diff     = Blt_Secure_Baseline_Scanner::legacy_diff(
+			$baseline,
+			$current,
+			static function ( $path ) use ( $sizes ) {
+				return isset( $sizes[ $path ] ) ? $sizes[ $path ] : null;
+			}
+		);
+		$this->assertSame( array( 'new.php' ), $diff['added'] );
+		$this->assertSame( array(), $diff['modified'] );
+		$this->assertSame( array(), $diff['removed'] );
+	}
+
+	public function test_legacy_diff_keeps_full_evidence_for_previously_monitored_files() {
+		$diff = Blt_Secure_Baseline_Scanner::legacy_diff(
+			array( 'a.php' => '1', 'b.php' => '2' ),
+			array( 'a.php' => 'CHANGED' ),
+			static function () {
+				return 10;
+			}
+		);
+		$this->assertSame( array( 'a.php' ), $diff['modified'] );
+		$this->assertSame( array( 'b.php' ), $diff['removed'] );
+	}
+
+	public function test_is_legacy_scope_matches_the_old_hashable_set_only() {
+		foreach ( array( 'a.php', 'A.PHP', 'x/y.phtml', 'z.inc', 'w.php5' ) as $path ) {
+			$this->assertTrue( Blt_Secure_Baseline_Scanner::is_legacy_scope( $path ), $path );
+		}
+		foreach ( array( 'a.js', 'b.json', '.htaccess', '.user.ini', 'c.phar', 'd.php8', 'e.txt' ) as $path ) {
+			$this->assertFalse( Blt_Secure_Baseline_Scanner::is_legacy_scope( $path ), $path );
+		}
+	}
+
+	public function test_upgrade_with_unchanged_plugin_is_not_false_drift_and_adopts_the_wider_scope() {
+		// A normal plugin: PHP plus JS, JSON and an .htaccess that the old scanner never hashed.
+		file_put_contents( $this->dir . '/plug/app.js', 'console.log(1);' );
+		file_put_contents( $this->dir . '/plug/block.json', '{}' );
+		file_put_contents( $this->dir . '/plug/.htaccess', 'Options -Indexes' );
+		$this->seed_legacy_baseline();
+
+		$payload = $this->module( '1.0' )->run_scan();
+
+		$this->assertSame( array(), $payload['findings'], 'Unchanged files must not be reported as "added" after an upgrade.' );
+		$index = get_option( Blt_Secure_Baseline::BASELINE_OPTION );
+		$this->assertSame( Blt_Secure_Baseline_Scanner::SCOPE, $index['plugin/plug']['scope'] );
+		$this->assertSame( 'wporg_checksums', $index['plugin/plug']['trust'], 'The entry keeps the trust it earned.' );
+		$this->assertSame( 1700000000, $index['plugin/plug']['time'] );
+		$stored = get_option( Blt_Secure_Baseline::store_name( 'plugin/plug' ) );
+		$this->assertArrayHasKey( 'app.js', $stored, 'Newly covered files are recorded.' );
+		$this->assertArrayHasKey( '.htaccess', $stored );
+
+		// And the wider scope really is monitored from then on.
+		file_put_contents( $this->dir . '/plug/app.js', 'document.write(unescape("%3Cscript..."));' );
+		$again = $this->module( '1.0' )->run_scan();
+		$this->assertCount( 1, $again['findings'] );
+		$this->assertSame( array( 'app.js' ), $again['findings'][0]['files'] );
+	}
+
+	public function test_upgrade_still_reports_real_changes_to_previously_monitored_files() {
+		file_put_contents( $this->dir . '/plug/app.js', 'console.log(1);' );
+		$this->seed_legacy_baseline();
+		file_put_contents( $this->dir . '/plug/plug.php', '<?php eval(base64_decode($_POST[1]));' );
+		file_put_contents( $this->dir . '/plug/dropper.php', '<?php // new file' );
+
+		$payload = $this->module( '1.0' )->run_scan();
+
+		$this->assertCount( 1, $payload['findings'] );
+		$finding = $payload['findings'][0];
+		$this->assertSame( 'drift', $finding['kind'] );
+		$this->assertSame( 1, $finding['modified'] );
+		$this->assertSame( 1, $finding['added'], 'Only the new PHP file; the pre-existing app.js is not an addition.' );
+		$this->assertNotContains( 'app.js', $finding['files'] );
+
+		$index = get_option( Blt_Secure_Baseline::BASELINE_OPTION );
+		$this->assertArrayNotHasKey( 'scope', $index['plugin/plug'], 'A dirty legacy baseline is not upgraded over evidence of tampering.' );
+		$stored = get_option( Blt_Secure_Baseline::store_name( 'plugin/plug' ) );
+		$this->assertSame( md5( '<?php // v1' ), $stored['plug.php'], 'The original hash is kept so the drift keeps surfacing.' );
+	}
+
+	public function test_a_new_javascript_file_alone_is_not_drift_on_a_legacy_baseline() {
+		$this->seed_legacy_baseline();
+		file_put_contents( $this->dir . '/plug/added-later.js', 'x' );
+		$payload = $this->module( '1.0' )->run_scan();
+		$this->assertSame( array(), $payload['findings'] );
+	}
 }

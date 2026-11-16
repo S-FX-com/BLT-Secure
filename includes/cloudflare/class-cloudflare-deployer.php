@@ -1087,10 +1087,13 @@ class Blt_Secure_Cloudflare_Deployer {
 		$hash     = Blt_Secure_Rule_Definitions::access_config_hash( $host, $slug, $emails, $base );
 		$changed  = ! isset( $previous['config_hash'] ) || $previous['config_hash'] !== $hash;
 
+		// The in-progress record carries the PREVIOUS main app forward: if this run dies or the main-app
+		// step fails after the bypass step, the live main app must stay tracked and owned. Starting from
+		// an empty app_id would orphan it (Remove would delete only the bypass app) and lose ownership.
 		$record = array(
-			'app_id'           => '',
+			'app_id'           => isset( $previous['app_id'] ) ? (string) $previous['app_id'] : '',
 			'bypass_app_id'    => '',
-			'app_owned'        => false,
+			'app_owned'        => ! empty( $previous['app_owned'] ),
 			'bypass_app_owned' => false,
 			'policy_ids'       => array(),
 			'host'             => $host,
@@ -1126,11 +1129,13 @@ class Blt_Secure_Cloudflare_Deployer {
 			// Roll back what this run created (a pre-existing app is untouched).
 			if ( $bypass['created'] ) {
 				$this->api->delete( $apps_url . '/' . Blt_Secure_Cloudflare_Api::seg( $bypass['id'] ) );
-				if ( empty( $previous ) ) {
-					$this->state->clear_deployment( 'access' );
-				} else {
-					$this->state->set_deployment( 'access', $previous );
-				}
+			}
+			// Restore the record on EVERY main-app failure, not only when the bypass app was new: the
+			// progress write above replaced it, and an adopted bypass app changes nothing to track.
+			if ( empty( $previous ) ) {
+				$this->state->clear_deployment( 'access' );
+			} else {
+				$this->state->set_deployment( 'access', $previous );
 			}
 			return $main;
 		}

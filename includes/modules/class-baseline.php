@@ -387,6 +387,22 @@ class Blt_Secure_Baseline implements Blt_Secure_Module {
 	}
 
 	/**
+	 * On-disk size lookup for a target's baseline paths (hash keys are relative to its directory;
+	 * a single-file plugin's only key is that file's basename).
+	 *
+	 * @param array $target Target descriptor.
+	 * @return callable function( string $path ): int|null
+	 */
+	private static function size_lookup( array $target ) {
+		$dir    = (string) $target['dir'];
+		$single = ! empty( $target['single'] );
+		return static function ( $path ) use ( $dir, $single ) {
+			$full = $single ? $dir : $dir . '/' . ltrim( (string) $path, '/' );
+			return is_file( $full ) ? (int) filesize( $full ) : null;
+		};
+	}
+
+	/**
 	 * Load an extension's stored file hashes (migrating the legacy inline form).
 	 *
 	 * @param string     $key   Baseline key.
@@ -541,8 +557,16 @@ class Blt_Secure_Baseline implements Blt_Secure_Module {
 			}
 
 			$old_hashes = null === $entry ? array() : $this->stored_hashes( $key, $entry );
-			$diff       = Blt_Secure_Baseline_Scanner::diff( $old_hashes, $hashes );
-			$changed    = array_merge( $diff['modified'], $diff['added'], $diff['removed'] );
+
+			// A baseline written before the hashed scope widened is compared over what it could see;
+			// otherwise every unchanged JS/JSON/config file would be "added" drift after an upgrade.
+			$legacy = null !== $entry && ( ! isset( $entry['scope'] ) || (int) $entry['scope'] < Blt_Secure_Baseline_Scanner::SCOPE );
+			if ( $legacy ) {
+				$diff = Blt_Secure_Baseline_Scanner::legacy_diff( $old_hashes, $hashes, self::size_lookup( $target ) );
+			} else {
+				$diff = Blt_Secure_Baseline_Scanner::diff( $old_hashes, $hashes );
+			}
+			$changed = array_merge( $diff['modified'], $diff['added'], $diff['removed'] );
 
 			// Decide what a differing version means.
 			$bump_fp   = '';
@@ -571,6 +595,24 @@ class Blt_Secure_Baseline implements Blt_Secure_Module {
 
 			$decision = Blt_Secure_Baseline_Scanner::rebaseline_decision( $entry, $target['version'], $confirmed, $ack );
 
+			// Clean legacy baseline, same version: nothing it covered changed. Adopt the wider scope in
+			// place — newly covered files are recorded as first-seen — keeping the entry's own trust
+			// and time, so evidence about the previously monitored files is never discarded.
+			if ( $legacy && 'compare' === $decision && ! Blt_Secure_Baseline_Scanner::has_changes( $diff ) ) {
+				if ( $this->store( self::store_name( $key ), $hashes ) ) {
+					$next[ $key ] = array(
+						'version' => isset( $entry['version'] ) ? $entry['version'] : $target['version'],
+						'trust'   => isset( $entry['trust'] ) ? $entry['trust'] : 'first_seen',
+						'time'    => isset( $entry['time'] ) ? $entry['time'] : $now,
+						'checked' => $now,
+						'count'   => count( $hashes ),
+						'scope'   => Blt_Secure_Baseline_Scanner::SCOPE,
+					);
+					continue;
+				}
+				++$errors; // Could not persist: keep the legacy entry and try again next scan.
+			}
+
 			if ( 'baseline' === $decision || 'accept' === $decision ) {
 				$new_trust = 'baseline' === $decision ? 'first_seen' : $trust; // first_seen = trust on first use.
 				$saved     = $this->store( self::store_name( $key ), $hashes );
@@ -581,6 +623,7 @@ class Blt_Secure_Baseline implements Blt_Secure_Module {
 						'time'    => $now,
 						'checked' => $now,
 						'count'   => count( $hashes ),
+						'scope'   => Blt_Secure_Baseline_Scanner::SCOPE,
 					);
 					if ( 'accept' === $decision && isset( $events[ $key ] ) ) {
 						unset( $events[ $key ] );
