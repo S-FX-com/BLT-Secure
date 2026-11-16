@@ -111,6 +111,12 @@ the IOC deployer PUT list items into someone else's Cloudflare account.
 - **A signature keyed with the same secret that travels as the bearer adds nothing.** Derive the signing key; better, use BLT Connect.
 - **Contract tests earn their keep:** every emitted high-signal slug is alerted or deliberately routine; every `Blt_Secure_*` option constant is purged by `uninstall.php` (it caught three options added by other agents the same day).
 
+## Widening what a monitor covers is an upgrade hazard
+
+- **A baseline written under a narrower scope must not be compared directly against a wider scan.** Widening the hashed file set (JS, JSON, config, bigger files) made every unchanged new-scope file look "added" on the first scan after upgrade — false drift on nearly every plugin, and a flood of findings into Buoy. Stamp the scope in the stored entry, compare legacy entries over what they could see, upgrade a clean one in place (new files recorded as first-seen), never upgrade a dirty one over evidence. Test with a baseline fixture written by the *previous* release, not one the new code produced.
+- **A capped loop must not skip the bookkeeping later passes depend on.** Breaking out of the checksum loop at the issue cap meant the "known files" set was incomplete, so the next pass flagged genuine core files. Stop the expensive work, keep collecting the cheap state.
+- **A progress write that replaces a record must carry forward what the previous record owned**, and every failure path must restore it — otherwise a failed redeploy orphans the live object it was updating.
+
 ## Tooling
 
 - **Composer scripts refuse to run as root** ("Do not run Composer as root"): call `vendor/bin/phpunit` / `vendor/bin/phpcs` directly, and register the WPCS paths with `phpcs --config-set installed_paths`.
