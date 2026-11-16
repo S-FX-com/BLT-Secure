@@ -152,6 +152,11 @@ $blt_secure_opt       = Blt_Secure_Options::OPTION;
 			);
 			blt_secure_setting_control();
 			blt_secure_toggle( $blt_secure_opt . '[fileguard][disallow_file_edit]', DISALLOW_FILE_EDIT, array( 'disabled' => true ) );
+			// A disabled control is never posted; carry the stored choice so saving
+			// this tab does not flip it off for the day the constant is removed.
+			if ( ! empty( $blt_secure_fileguard['disallow_file_edit'] ) ) {
+				printf( '<input type="hidden" name="%s" value="1" />', esc_attr( $blt_secure_opt . '[fileguard][disallow_file_edit]' ) );
+			}
 			blt_secure_setting_close();
 			?>
 		<?php else : ?>

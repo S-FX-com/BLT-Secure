@@ -1,5 +1,7 @@
 # Fleet Dashboard — deploy runbook
 
+> **Legacy — superseded by Buoy / BLT Connect.** Frozen: defect fixes only.
+
 Cloudflare Worker + D1. No build step (plain ESM JS). Runtime dependencies:
 none. Dev dependency: `wrangler`.
 
@@ -34,18 +36,31 @@ npx wrangler deploy
 ## 4. Put the operator routes behind Cloudflare Access
 `/` and `/admin/*` expose fleet data and site enrollment — gate them:
 
-1. Zero Trust → Access → Applications → **Add self-hosted app** for the
-   Worker's hostname, path `/` and `/admin/*`.
-2. Policy: **Allow** your admin email(s).
-3. Leave `ACCESS_ENFORCED = "1"` in `wrangler.toml` so the Worker also
-   rejects operator requests missing the Access identity header.
+1. Serve the Worker from a **custom domain / route** (`workers_dev = false` in
+   `wrangler.toml` turns the public `*.workers.dev` hostname off — leave it off).
+2. Zero Trust → Access → Applications → **Add self-hosted app** for the
+   Worker's hostname, paths `/` and `/admin/*`. Policy: **Allow** your admin
+   email(s).
+3. Copy the app's **Application Audience (AUD) tag** and your team domain
+   (`<team>.cloudflareaccess.com`) into `wrangler.toml`:
+   `ACCESS_AUD` and `ACCESS_TEAM_DOMAIN`, then `npx wrangler deploy`.
+
+The Worker verifies the signed `Cf-Access-Jwt-Assertion` header (RS256 against
+the team JWKS, with `aud`, `iss` and `exp` checked) on every operator request.
+A bare `Cf-Access-Authenticated-User-Email` header is **not** trusted — a client
+can send it to any hostname that reaches the Worker without Access. If either
+variable is empty the operator routes **refuse every request** (fail closed).
 
 The `/v1/*` ingest routes are authenticated by the per-site token + HMAC and
 must **not** be behind Access (client sites call them machine-to-machine).
 
 ## 5. Enroll a site
 ```bash
-curl -X POST https://<worker-host>/admin/sites   # returns { id, token }
+# Through Access, use a service token (or a browser session): the request needs
+# a valid Access JWT. Cross-site browser requests are refused (Origin check).
+curl -X POST https://<worker-host>/admin/sites \
+  -H "CF-Access-Client-Id: <id>" -H "CF-Access-Client-Secret: <secret>"
+# returns { id, token }
 ```
 The `token` is shown once. Paste it into the site's BLT Secure → Advanced →
 Fleet enrollment field, set the endpoint to `https://<worker-host>`, enable
@@ -57,9 +72,10 @@ fleet reporting, save, then "Send report now".
 | POST | `/v1/snapshot` | site token + HMAC | ingest a posture snapshot |
 | GET | `/v1/commands` | site token + HMAC | pull queued remote commands |
 | POST | `/v1/commands/ack` | site token + HMAC | acknowledge executed commands (→ `done`) |
-| GET | `/` | Cloudflare Access | operator dashboard |
-| POST | `/admin/sites` | Cloudflare Access | enroll a site (one-time token) |
-| POST | `/admin/commands` | Cloudflare Access | queue a command for a site |
+| GET | `/` | Cloudflare Access (JWT verified) | operator dashboard |
+| POST | `/admin/sites` | Cloudflare Access (JWT verified) | enroll a site (one-time token) |
+| POST | `/admin/commands` | Cloudflare Access | queue a command for a site (`application/json`, known command, existing `site_id`) |
+| POST | `/admin/sites/revoke` | Cloudflare Access | delete a site and its token (`{ "site_id": n }`) |
 
 ## Notes / next steps
 - Only `sha256(token)` is stored; the raw token lives only on the client site.

@@ -30,6 +30,8 @@ $blt_secure_opt   = Blt_Secure_Options::OPTION;
 					<p class="blt-setting-desc"><?php esc_html_e( 'Login URL renaming is not available on multisite installations yet.', 'blt-secure' ); ?></p>
 				<?php elseif ( defined( 'BLT_SECURE_DISABLE_SLUG' ) && BLT_SECURE_DISABLE_SLUG ) : ?>
 					<p class="blt-setting-desc"><code>BLT_SECURE_DISABLE_SLUG</code> <?php esc_html_e( 'is set in wp-config.php — the custom slug is bypassed and wp-login.php works normally.', 'blt-secure' ); ?></p>
+					<?php // The slug field is not shown here; carry the stored value so saving this tab never clears it (or its backup key). ?>
+					<input type="hidden" name="<?php echo esc_attr( $blt_secure_opt ); ?>[login][slug]" value="<?php echo esc_attr( $blt_secure_login['slug'] ); ?>" />
 				<?php else : ?>
 					<p class="blt-setting-desc"><?php esc_html_e( 'Leave empty to keep the default wp-login.php. When set, wp-login.php and unauthenticated wp-admin return 404. You will receive the new URL by email; bookmark it.', 'blt-secure' ); ?></p>
 					<p class="blt-setting-desc"><code><?php echo esc_html( untrailingslashit( home_url() ) ); ?>/</code>

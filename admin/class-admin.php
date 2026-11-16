@@ -280,7 +280,7 @@ class Blt_Secure_Admin {
 		printf(
 			'<div class="notice notice-error"><p><strong>%s</strong> %s <a href="%s">%s</a></p></div>',
 			esc_html__( 'BLT Secure:', 'blt-secure' ),
-			esc_html__( 'the WordPress security keys changed, so the stored credentials (Cloudflare token, GitHub updates token, Slack webhook) could not be decrypted and were removed. Those features are paused until you re-enter them.', 'blt-secure' ),
+			esc_html__( 'the WordPress security keys changed, so the stored credentials (Cloudflare token, GitHub updates token, Slack webhook, fleet enrollment token) could not be decrypted and were removed. Those features are paused until you re-enter them. This notice stays until you store a credential again.', 'blt-secure' ),
 			esc_url( self::tab_url( 'cloudflare' ) ),
 			esc_html__( 'Re-enter tokens', 'blt-secure' )
 		);
@@ -414,6 +414,36 @@ class Blt_Secure_Admin {
 	// -------------------------------------------------------------------
 
 	/**
+	 * Normalize a pasted secret (API token, enrollment token): trimmed, one
+	 * run of printable ASCII, no whitespace. sanitize_text_field() is wrong for
+	 * secrets — it strips tag-like runs and %xx sequences and so silently
+	 * corrupts a valid value.
+	 *
+	 * Pure function (unit-tested).
+	 *
+	 * @param mixed $raw Raw (already unslashed) value.
+	 * @return string The secret, or '' when absent or malformed.
+	 */
+	public static function normalize_secret( $raw ) {
+		if ( ! is_string( $raw ) ) {
+			return '';
+		}
+		$raw = trim( $raw );
+		return 1 === preg_match( '/^[\x21-\x7E]{8,512}$/', $raw ) ? $raw : '';
+	}
+
+	/**
+	 * Read a pasted secret from the (already nonce-checked) POST body.
+	 *
+	 * @param string $field POST field name.
+	 * @return string
+	 */
+	private static function posted_secret( $field ) {
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- guard() ran check_ajax_referer; normalize_secret() validates.
+		return isset( $_POST[ $field ] ) ? self::normalize_secret( wp_unslash( $_POST[ $field ] ) ) : '';
+	}
+
+	/**
 	 * Shared AJAX guard.
 	 *
 	 * @return void
@@ -455,9 +485,9 @@ class Blt_Secure_Admin {
 	public function ajax_save_token() {
 		$this->guard();
 
-		$token = isset( $_POST['token'] ) ? sanitize_text_field( wp_unslash( $_POST['token'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Missing -- guard() ran check_ajax_referer.
+		$token = self::posted_secret( 'token' );
 		if ( '' === $token ) {
-			wp_send_json_error( array( 'message' => __( 'Token is empty.', 'blt-secure' ) ) );
+			wp_send_json_error( array( 'message' => __( 'Token is empty or not in a valid format.', 'blt-secure' ) ) );
 		}
 
 		if ( ! $this->plugin->credentials->is_available() ) {
@@ -586,10 +616,9 @@ class Blt_Secure_Admin {
 	public function ajax_gh_save_token() {
 		$this->guard();
 
-		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- guard() ran check_ajax_referer.
-		$token = isset( $_POST['token'] ) ? sanitize_text_field( wp_unslash( $_POST['token'] ) ) : '';
+		$token = self::posted_secret( 'token' );
 		if ( '' === $token ) {
-			wp_send_json_error( array( 'message' => __( 'Token is empty.', 'blt-secure' ) ) );
+			wp_send_json_error( array( 'message' => __( 'Token is empty or not in a valid format.', 'blt-secure' ) ) );
 		}
 
 		if ( ! $this->plugin->credentials->is_available() ) {
@@ -610,7 +639,7 @@ class Blt_Secure_Admin {
 		);
 
 		if ( is_wp_error( $response ) ) {
-			wp_send_json_error( array( 'message' => $response->get_error_message() ) );
+			wp_send_json_error( array( 'message' => __( 'Could not reach GitHub to verify the token. Try again in a moment.', 'blt-secure' ) ) );
 		}
 		$status = (int) wp_remote_retrieve_response_code( $response );
 		if ( 200 !== $status ) {
@@ -655,30 +684,29 @@ class Blt_Secure_Admin {
 	public function ajax_slack_save() {
 		$this->guard();
 
-		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- guard() ran check_ajax_referer.
-		$webhook = isset( $_POST['webhook'] ) ? esc_url_raw( wp_unslash( $_POST['webhook'] ) ) : '';
-		if ( '' === $webhook || 0 !== strpos( $webhook, 'https://' ) ) {
-			wp_send_json_error( array( 'message' => __( 'Enter a valid https Slack webhook URL.', 'blt-secure' ) ) );
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- guard() ran check_ajax_referer; the URL is validated below.
+		$webhook = isset( $_POST['webhook'] ) && is_string( $_POST['webhook'] ) ? esc_url_raw( trim( wp_unslash( $_POST['webhook'] ) ), array( 'https' ) ) : '';
+		if ( '' === $webhook || ! Blt_Secure_Alert_Channels::is_allowed_webhook( $webhook ) ) {
+			wp_send_json_error( array( 'message' => __( 'Enter a Slack incoming-webhook URL (https://hooks.slack.com/services/…).', 'blt-secure' ) ) );
 		}
 
 		if ( ! $this->plugin->credentials->is_available() ) {
 			wp_send_json_error( array( 'message' => __( 'This server has no authenticated-encryption support; the webhook cannot be stored safely and was NOT saved.', 'blt-secure' ) ) );
 		}
 
-		// Prove the webhook works before storing it.
-		$test = wp_remote_post(
+		// Prove the webhook works before storing it. wp_safe_remote_post()
+		// refuses internal addresses; the raw transport error is never shown.
+		$test = wp_safe_remote_post(
 			$webhook,
 			array(
-				'timeout' => 10,
-				'headers' => array( 'Content-Type' => 'application/json' ),
-				'body'    => wp_json_encode( Blt_Secure_Alert_Channels::slack_payload( __( 'BLT Secure: Slack alerts are now connected.', 'blt-secure' ) ) ),
+				'timeout'     => 10,
+				'redirection' => 0,
+				'headers'     => array( 'Content-Type' => 'application/json' ),
+				'body'        => wp_json_encode( Blt_Secure_Alert_Channels::slack_payload( __( 'BLT Secure: Slack alerts are now connected.', 'blt-secure' ) ) ),
 			)
 		);
-		if ( is_wp_error( $test ) ) {
-			wp_send_json_error( array( 'message' => $test->get_error_message() ) );
-		}
-		if ( 200 !== (int) wp_remote_retrieve_response_code( $test ) ) {
-			wp_send_json_error( array( 'message' => __( 'Slack rejected the webhook. Double-check the URL.', 'blt-secure' ) ) );
+		if ( is_wp_error( $test ) || 200 !== (int) wp_remote_retrieve_response_code( $test ) ) {
+			wp_send_json_error( array( 'message' => __( 'Slack did not accept the webhook. Double-check the URL.', 'blt-secure' ) ) );
 		}
 
 		$stored = $this->plugin->credentials->set( 'slack_webhook', $webhook );
@@ -710,10 +738,9 @@ class Blt_Secure_Admin {
 	public function ajax_fleet_save() {
 		$this->guard();
 
-		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- guard() ran check_ajax_referer.
-		$token = isset( $_POST['token'] ) ? sanitize_text_field( wp_unslash( $_POST['token'] ) ) : '';
+		$token = self::posted_secret( 'token' );
 		if ( '' === $token ) {
-			wp_send_json_error( array( 'message' => __( 'Enrollment token is empty.', 'blt-secure' ) ) );
+			wp_send_json_error( array( 'message' => __( 'Enrollment token is empty or not in a valid format.', 'blt-secure' ) ) );
 		}
 		if ( ! $this->plugin->credentials->is_available() ) {
 			wp_send_json_error( array( 'message' => __( 'This server has no authenticated-encryption support; the token cannot be stored safely and was NOT saved.', 'blt-secure' ) ) );
@@ -757,9 +784,11 @@ class Blt_Secure_Admin {
 			wp_send_json_success( array( 'message' => __( 'Report sent to the dashboard.', 'blt-secure' ) ) );
 		}
 
+		// The transport error text stays server-side (in the stored status); the
+		// browser only gets a fixed message.
 		$message = 'not_configured' === $result['status']
-			? __( 'Set the dashboard endpoint (and enable + save) and store an enrollment token first.', 'blt-secure' )
-			: ( isset( $result['error'] ) ? $result['error'] : __( 'The report could not be sent.', 'blt-secure' ) );
+			? __( 'Set the dashboard endpoint (an https:// URL), enable + save, and store an enrollment token first.', 'blt-secure' )
+			: __( 'The report could not be sent. Check that the endpoint is a reachable https:// URL and the enrollment token is current.', 'blt-secure' );
 		wp_send_json_error( array( 'message' => $message ) );
 	}
 

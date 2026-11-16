@@ -158,9 +158,15 @@ if ( ! function_exists( 'add_filter' ) ) {
 
 if ( ! function_exists( 'do_action' ) ) {
 	/**
-	 * WP shim — no-op.
+	 * WP shim — records the call (tests assert on $GLOBALS['blt_test_actions']).
 	 */
-	function do_action() {}
+	function do_action() {
+		$args                            = func_get_args();
+		$GLOBALS['blt_test_actions'][] = $args;
+		if ( isset( $GLOBALS['blt_test_on_action'] ) && is_callable( $GLOBALS['blt_test_on_action'] ) ) {
+			call_user_func_array( $GLOBALS['blt_test_on_action'], $args );
+		}
+	}
 }
 
 if ( ! function_exists( 'wp_unslash' ) ) {
@@ -546,3 +552,181 @@ foreach ( array( 'includes/modules/class-headers.php', 'includes/modules/class-p
 		require_once BLT_SECURE_DIR . $blt_test_file;
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Shims for the fleet / alert-channel / hardening-pass tests. Each records or
+// replays state held in a $GLOBALS['blt_test_*'] array; tests reset them.
+// ---------------------------------------------------------------------------
+
+$GLOBALS['blt_test_actions']   = array();
+$GLOBALS['blt_test_scheduled'] = array();
+$GLOBALS['blt_test_http']      = array();
+$GLOBALS['blt_test_mail']      = array();
+$GLOBALS['blt_test_errors']    = array();
+
+if ( ! function_exists( 'wp_parse_url' ) ) {
+	/**
+	 * WP shim.
+	 *
+	 * @param string $url       URL.
+	 * @param int    $component Component.
+	 * @return mixed
+	 */
+	function wp_parse_url( $url, $component = -1 ) {
+		return parse_url( (string) $url, $component ); // phpcs:ignore WordPress.WP.AlternativeFunctions.parse_url_parse_url
+	}
+}
+
+if ( ! function_exists( 'esc_url_raw' ) ) {
+	/**
+	 * WP shim — pass-through.
+	 *
+	 * @param string $url       URL.
+	 * @param array  $protocols Ignored.
+	 * @return string
+	 */
+	function esc_url_raw( $url, $protocols = null ) { // phpcs:ignore
+		return (string) $url;
+	}
+}
+
+if ( ! function_exists( 'add_settings_error' ) ) {
+	/**
+	 * WP shim — records.
+	 *
+	 * @param string $setting Setting.
+	 * @param string $code    Code.
+	 * @param string $message Message.
+	 * @return void
+	 */
+	function add_settings_error( $setting, $code, $message ) { // phpcs:ignore
+		$GLOBALS['blt_test_errors'][] = $code;
+	}
+}
+
+if ( ! function_exists( 'wp_schedule_single_event' ) ) {
+	/**
+	 * WP shim — records the scheduled event.
+	 *
+	 * @param int    $timestamp When.
+	 * @param string $hook      Hook.
+	 * @param array  $args      Args.
+	 * @return bool
+	 */
+	function wp_schedule_single_event( $timestamp, $hook, $args = array() ) {
+		$GLOBALS['blt_test_scheduled'][] = array(
+			'time' => $timestamp,
+			'hook' => $hook,
+			'args' => $args,
+		);
+		return true;
+	}
+}
+
+if ( ! function_exists( 'get_bloginfo' ) ) {
+	/**
+	 * WP shim.
+	 *
+	 * @param string $show What.
+	 * @return string
+	 */
+	function get_bloginfo( $show = '' ) { // phpcs:ignore
+		return 'Test Site';
+	}
+}
+
+if ( ! function_exists( 'home_url' ) ) {
+	/**
+	 * WP shim.
+	 *
+	 * @return string
+	 */
+	function home_url() {
+		return 'https://example.test';
+	}
+}
+
+if ( ! function_exists( 'wp_mail' ) ) {
+	/**
+	 * WP shim — records.
+	 *
+	 * @param string $to      To.
+	 * @param string $subject Subject.
+	 * @param string $body    Body.
+	 * @return bool
+	 */
+	function wp_mail( $to, $subject, $body ) {
+		$GLOBALS['blt_test_mail'][] = array( $to, $subject, $body );
+		return true;
+	}
+}
+
+if ( ! function_exists( 'wp_remote_retrieve_header' ) ) {
+	/**
+	 * WP shim.
+	 *
+	 * @param array  $response Response.
+	 * @param string $header   Header name.
+	 * @return string
+	 */
+	function wp_remote_retrieve_header( $response, $header ) {
+		$headers = isset( $response['headers'] ) ? array_change_key_case( (array) $response['headers'], CASE_LOWER ) : array();
+		return isset( $headers[ strtolower( $header ) ] ) ? $headers[ strtolower( $header ) ] : '';
+	}
+}
+
+if ( ! function_exists( 'wp_safe_remote_post' ) ) {
+	/**
+	 * WP shim — records the request and replays a queued response (or a stub).
+	 *
+	 * @param string $url  URL.
+	 * @param array  $args Args.
+	 * @return array|WP_Error
+	 */
+	function wp_safe_remote_post( $url, $args = array() ) {
+		return blt_test_http_request( 'POST', $url, $args );
+	}
+}
+
+if ( ! function_exists( 'wp_safe_remote_get' ) ) {
+	/**
+	 * WP shim — see wp_safe_remote_post().
+	 *
+	 * @param string $url  URL.
+	 * @param array  $args Args.
+	 * @return array|WP_Error
+	 */
+	function wp_safe_remote_get( $url, $args = array() ) {
+		return blt_test_http_request( 'GET', $url, $args );
+	}
+}
+
+if ( ! function_exists( 'blt_test_http_request' ) ) {
+	/**
+	 * Record an HTTP request; respond with the next queued response callable
+	 * (receives the request) or a bare 200.
+	 *
+	 * @param string $method Method.
+	 * @param string $url    URL.
+	 * @param array  $args   Args.
+	 * @return array|WP_Error
+	 */
+	function blt_test_http_request( $method, $url, $args ) {
+		$GLOBALS['blt_test_requests'][] = array(
+			'method' => $method,
+			'url'    => $url,
+			'args'   => $args,
+		);
+		$next = array_shift( $GLOBALS['blt_test_http'] );
+		if ( is_callable( $next ) ) {
+			return $next( $method, $url, $args );
+		}
+		return array(
+			'response' => array( 'code' => 200 ),
+			'body'     => '',
+			'headers'  => array(),
+		);
+	}
+}
+
+$GLOBALS['blt_test_requests'] = array();

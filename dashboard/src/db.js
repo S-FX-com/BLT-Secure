@@ -79,19 +79,109 @@ export async function recordEvents( db, siteId, ts, events ) {
 		return;
 	}
 	const stmt = db.prepare( 'INSERT INTO events (site_id, ts, type, count) VALUES (?, ?, ?, ?)' );
-	await db.batch( entries.map( ( [ type, count ] ) => stmt.bind( siteId, ts, type, count ) ) );
+	await db.batch( [
+		...entries.map( ( [ type, count ] ) => stmt.bind( siteId, ts, type, count ) ),
+		// Retention: the table is append-only, so trim it as we write.
+		db.prepare( 'DELETE FROM events WHERE ts < ?' ).bind( ts - EVENT_RETENTION ),
+	] );
 }
 
 /**
- * Pending commands for a site (for the pull model).
+ * reported_at of a site's stored snapshot (0 when none).
  * @param {D1Database} db
  * @param {number} siteId
+ * @returns {Promise<number>}
+ */
+export async function getSnapshotReportedAt( db, siteId ) {
+	const row = await db.prepare( 'SELECT reported_at FROM snapshots WHERE site_id = ?' ).bind( siteId ).first();
+	return row && Number.isFinite( Number( row.reported_at ) ) ? Number( row.reported_at ) : 0;
+}
+
+/**
+ * Whether a site row exists.
+ * @param {D1Database} db
+ * @param {number} siteId
+ * @returns {Promise<boolean>}
+ */
+export async function siteExists( db, siteId ) {
+	return !! ( await db.prepare( 'SELECT id FROM sites WHERE id = ?' ).bind( siteId ).first() );
+}
+
+/**
+ * How many unfinished commands a site has queued.
+ * @param {D1Database} db
+ * @param {number} siteId
+ * @param {number} now
+ * @returns {Promise<number>}
+ */
+export async function countQueued( db, siteId, now ) {
+	const row = await db
+		.prepare( "SELECT COUNT(*) AS n FROM commands WHERE site_id = ? AND status IN ('pending','delivered') AND created_at >= ?" )
+		.bind( siteId, now - COMMAND_TTL )
+		.first();
+	return row ? Number( row.n ) || 0 : 0;
+}
+
+/**
+ * Queue one (already validated) command. Operator params are not stored: the
+ * plugin ignores them, so there is nothing to carry.
+ * @param {D1Database} db
+ * @param {number} siteId
+ * @param {string} command
+ * @param {number} now
+ * @returns {Promise<void>}
+ */
+export async function queueCommand( db, siteId, command, now ) {
+	await db
+		.prepare( "INSERT INTO commands (site_id, created_at, command, params, status) VALUES (?, ?, ?, '{}', 'pending')" )
+		.bind( siteId, now, command )
+		.run();
+}
+
+/**
+ * Revoke a site: delete it and everything keyed to it (its token stops
+ * working immediately). Explicit deletes — not reliant on FK cascade.
+ * @param {D1Database} db
+ * @param {number} siteId
+ * @returns {Promise<void>}
+ */
+export async function deleteSite( db, siteId ) {
+	await db.batch( [
+		db.prepare( 'DELETE FROM commands WHERE site_id = ?' ).bind( siteId ),
+		db.prepare( 'DELETE FROM events WHERE site_id = ?' ).bind( siteId ),
+		db.prepare( 'DELETE FROM snapshots WHERE site_id = ?' ).bind( siteId ),
+		db.prepare( 'DELETE FROM sites WHERE id = ?' ).bind( siteId ),
+	] );
+}
+
+/** A delivered-but-unacknowledged command is re-sent after this many seconds. */
+export const REDELIVER_AFTER = 900;
+/** Commands older than this never run (a stale queue must not fire months later). */
+export const COMMAND_TTL = 7 * 86400;
+/** Most commands handed out per pull; the plugin also caps execution. */
+export const MAX_PER_PULL = 5;
+/** Most unfinished commands a site may have queued. */
+export const MAX_QUEUED = 50;
+/** Event rows are kept this long. */
+export const EVENT_RETENTION = 90 * 86400;
+
+/**
+ * Commands to hand a site: pending ones, plus ones delivered but never
+ * acknowledged for REDELIVER_AFTER seconds (the plugin died mid-run or the ack
+ * was lost). Delivery only ever means "sent", never "done".
+ * @param {D1Database} db
+ * @param {number} siteId
+ * @param {number} now
  * @returns {Promise<object[]>}
  */
-export async function pendingCommands( db, siteId ) {
+export async function pendingCommands( db, siteId, now ) {
 	const res = await db
-		.prepare( "SELECT id, command, params FROM commands WHERE site_id = ? AND status = 'pending' ORDER BY id" )
-		.bind( siteId )
+		.prepare(
+			'SELECT id, command FROM commands WHERE site_id = ?1 AND created_at >= ?2 ' +
+				"AND (status = 'pending' OR (status = 'delivered' AND delivered_at < ?3)) ORDER BY id LIMIT " +
+				MAX_PER_PULL
+		)
+		.bind( siteId, now - COMMAND_TTL, now - REDELIVER_AFTER )
 		.all();
 	return res.results || [];
 }

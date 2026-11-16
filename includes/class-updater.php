@@ -33,6 +33,13 @@ class Blt_Secure_Updater {
 	const ASSET_REGEX = '/^blt-secure(-[\d.]+)?\.zip$/i';
 
 	/**
+	 * Mirrors plugin-update-checker's Api::REQUIRE_RELEASE_ASSETS (the library
+	 * default, PREFER_RELEASE_ASSETS, falls back to the auto-generated source
+	 * zip, which ships dev files and a commit-hash folder name).
+	 */
+	const REQUIRE_RELEASE_ASSETS = 2;
+
+	/**
 	 * Credential store.
 	 *
 	 * @var Blt_Secure_Credential_Store
@@ -93,7 +100,24 @@ class Blt_Secure_Updater {
 		}
 
 		// Only accept the CI-built zip asset; ignore checksums/source archives.
-		$checker->getVcsApi()->enableReleaseAssets( self::ASSET_REGEX );
+		$checker->getVcsApi()->enableReleaseAssets( self::ASSET_REGEX, self::REQUIRE_RELEASE_ASSETS );
+
+		// REQUIRE alone is not enough: with no matching asset the library falls
+		// through to its latest-tag / branch strategies, whose download is the
+		// source archive. Drop any update that is not a CI-built release asset
+		// and refuse to download one even if it slips through.
+		$checker->addFilter(
+			'request_info_result',
+			static function ( $info ) {
+				if ( is_object( $info ) && ! empty( $info->download_url ) && ! Blt_Secure_Updater::is_release_asset_url( $info->download_url ) ) {
+					return null;
+				}
+				return $info;
+			},
+			10,
+			2
+		);
+		add_filter( 'upgrader_pre_download', array( __CLASS__, 'guard_package' ), 10, 2 );
 
 		/*
 		 * Family update policy: at most one automatic check a day, anchored to
@@ -111,6 +135,49 @@ class Blt_Secure_Updater {
 		);
 
 		$this->checker = $checker;
+	}
+
+	/**
+	 * Whether a package URL is a CI-built release asset of this repository
+	 * (never a source zipball/tarball/branch archive).
+	 *
+	 * Pure function (unit-tested).
+	 *
+	 * @param string $url Package URL.
+	 * @return bool
+	 */
+	public static function is_release_asset_url( $url ) {
+		$parts = wp_parse_url( (string) $url );
+		if ( ! is_array( $parts ) || empty( $parts['host'] ) || empty( $parts['path'] ) || 'https' !== strtolower( isset( $parts['scheme'] ) ? $parts['scheme'] : '' ) ) {
+			return false;
+		}
+		$host = strtolower( $parts['host'] );
+		$path = $parts['path'];
+		if ( 'api.github.com' === $host ) {
+			return 1 === preg_match( '#^/repos/S-FX-com/BLT-Secure/releases/assets/\d+$#i', $path );
+		}
+		if ( 'github.com' === $host ) {
+			return 1 === preg_match( '#^/S-FX-com/BLT-Secure/releases/download/[^/]+/blt-secure(-[\d.]+)?\.zip$#i', $path );
+		}
+		return false;
+	}
+
+	/**
+	 * upgrader_pre_download: refuse a source archive of this repository.
+	 *
+	 * @param mixed  $reply   Short-circuit value (false = proceed).
+	 * @param string $package Package URL.
+	 * @return mixed
+	 */
+	public static function guard_package( $reply, $package ) {
+		$package = (string) $package;
+		if ( false !== stripos( $package, 'S-FX-com/BLT-Secure' ) && ! self::is_release_asset_url( $package ) ) {
+			return new WP_Error(
+				'blt_secure_source_archive',
+				__( 'BLT Secure only installs the CI-built release package, not a source archive. Update was not installed.', 'blt-secure' )
+			);
+		}
+		return $reply;
 	}
 
 	/**

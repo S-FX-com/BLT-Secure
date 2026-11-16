@@ -1,6 +1,9 @@
 /**
  * Request authentication for the fleet ingest API.
  *
+ * LEGACY — superseded by Buoy / BLT Connect (Ed25519 envelopes). Frozen:
+ * defects only, no new features.
+ *
  * Mirrors the plugin's Blt_Secure_Fleet signing: the per-site token is the
  * HMAC secret and the Bearer credential. The Worker stores only the token's
  * SHA-256 (for lookup) — never the raw token — and recomputes the HMAC from
@@ -102,4 +105,44 @@ export function isFresh( ts, now, maxSkew = 300 ) {
 export async function verifySignature( token, ts, body, signature ) {
 	const expected = await hmacHex( token, `${ String( ts ) }.${ String( body ) }` );
 	return timingSafeEqualHex( expected, signature );
+}
+
+/**
+ * Domain-separation label for the response-signing key. MUST match
+ * Blt_Secure_Fleet::RESPONSE_KEY_LABEL in the plugin.
+ */
+export const RESPONSE_KEY_LABEL = 'blt-secure-fleet/v2/response-key';
+
+/**
+ * Whether a request nonce is acceptable (opaque, 16-64 alphanumerics).
+ * @param {string} nonce
+ * @returns {boolean}
+ */
+export function isValidNonce( nonce ) {
+	return /^[A-Za-z0-9]{16,64}$/.test( String( nonce || '' ) );
+}
+
+/**
+ * Derive the response-signing key from the site token: HMAC(token, label),
+ * hex. A different secret from the bearer token and request-signing key, so
+ * a request signature can never double as a response signature.
+ * @param {string} token
+ * @returns {Promise<string>}
+ */
+export function responseKey( token ) {
+	return hmacHex( token, RESPONSE_KEY_LABEL );
+}
+
+/**
+ * Sign a /v1/commands response: hex HMAC of `${ts}.${nonce}.${body}`.
+ * Binding the request's nonce means a captured response cannot be replayed
+ * against a later request.
+ * @param {string} token
+ * @param {string|number} ts
+ * @param {string} nonce
+ * @param {string} body
+ * @returns {Promise<string>}
+ */
+export async function signResponse( token, ts, nonce, body ) {
+	return hmacHex( await responseKey( token ), `${ String( ts ) }.${ nonce }.${ String( body ) }` );
 }

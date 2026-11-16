@@ -8,6 +8,14 @@
  */
 
 /**
+ * Ingest contract version. 2 = https-only plugin, signed /v1/commands
+ * response, events are counts since the previous successful report.
+ */
+export const SCHEMA = 2;
+
+const MAX_EVENT_TYPES = 16;
+
+/**
  * @typedef {{ ok: true, value: object } | { ok: false, error: string }} ParseResult
  */
 
@@ -54,7 +62,7 @@ export function parseSnapshot( raw ) {
 	if ( ! raw || 'object' !== typeof raw || Array.isArray( raw ) ) {
 		return { ok: false, error: 'not an object' };
 	}
-	if ( 1 !== Number( raw.schema ) ) {
+	if ( SCHEMA !== Number( raw.schema ) ) {
 		return { ok: false, error: 'unsupported schema' };
 	}
 	const site = str( raw.site, 255 );
@@ -69,14 +77,19 @@ export function parseSnapshot( raw ) {
 	const events = {};
 	if ( raw.events && 'object' === typeof raw.events && ! Array.isArray( raw.events ) ) {
 		for ( const [ type, count ] of Object.entries( raw.events ) ) {
-			events[ str( type, 64 ) ] = int( count );
+			// Plain slug keys only, and a hard cap on how many, so a token holder
+			// cannot grow the events table with arbitrary strings.
+			if ( '__proto__' === type || ! /^[a-z0-9_]{1,64}$/.test( type ) || Object.keys( events ).length >= MAX_EVENT_TYPES ) {
+				continue;
+			}
+			events[ type ] = Math.min( int( count ), 100000 );
 		}
 	}
 
 	return {
 		ok: true,
 		value: {
-			schema: 1,
+			schema: SCHEMA,
 			site,
 			name: str( raw.name, 200 ),
 			reported_at: int( raw.reported_at ),
