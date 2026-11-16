@@ -222,9 +222,9 @@ class Blt_Secure_Buoy_Bridge {
 			$severity  = 'modified' === $status ? 'high' : 'medium';
 			$signature = 'core_' . $status;
 		} elseif ( 'malware' === $scanner ) {
-			$type      = isset( $finding['type'] ) ? preg_replace( '/[^a-z0-9_]/', '', strtolower( (string) $finding['type'] ) ) : 'finding';
-			$path      = isset( $finding['path'] ) ? (string) $finding['path'] : '';
-			$severity  = isset( $finding['severity'] ) ? strtolower( (string) $finding['severity'] ) : 'medium';
+			$type     = isset( $finding['type'] ) ? preg_replace( '/[^a-z0-9_]/', '', strtolower( (string) $finding['type'] ) ) : 'finding';
+			$path     = isset( $finding['path'] ) ? (string) $finding['path'] : '';
+			$severity = isset( $finding['severity'] ) ? strtolower( (string) $finding['severity'] ) : 'medium';
 			// The stored fingerprint also hashes the translated description, so it changes when the
 			// admin language does. Build the signature from the stable parts instead.
 			$stable    = isset( $finding['hash'] ) ? sha1( $type . '|' . $path . '|' . (string) $finding['hash'] . '|' . ( isset( $finding['line'] ) ? (int) $finding['line'] : 0 ) ) : $short;
