@@ -800,27 +800,54 @@ class Blt_Secure_Admin {
 	public function ajax_whitelist_add() {
 		$this->guard();
 
-		// phpcs:disable WordPress.Security.NonceVerification.Missing -- guard() ran check_ajax_referer.
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- guard() ran check_ajax_referer.
 		$fingerprint = isset( $_POST['fingerprint'] ) ? sanitize_text_field( wp_unslash( $_POST['fingerprint'] ) ) : '';
-		$scanner     = isset( $_POST['scanner'] ) ? sanitize_key( wp_unslash( $_POST['scanner'] ) ) : '';
-		$label       = isset( $_POST['label'] ) ? sanitize_text_field( wp_unslash( $_POST['label'] ) ) : '';
-		// phpcs:enable WordPress.Security.NonceVerification.Missing
 
-		if ( ! Blt_Secure_Scan_Whitelist::is_valid_fingerprint( $fingerprint ) ) {
-			wp_send_json_error( array( 'message' => __( 'Invalid finding reference.', 'blt-secure' ) ) );
+		// Only a finding a scanner actually stored can be ignored, and the scanner and label come
+		// from that stored finding, not from the request.
+		$stored = Blt_Secure_Scan_Whitelist::locate(
+			$fingerprint,
+			array(
+				'core'     => $this->stored_findings( Blt_Secure_Scanner::RESULTS_OPTION, 'issues' ),
+				'malware'  => $this->stored_findings( Blt_Secure_Malware::RESULTS_OPTION, 'findings' ),
+				'baseline' => $this->stored_findings( Blt_Secure_Baseline::RESULTS_OPTION, 'findings' ),
+			)
+		);
+		if ( null === $stored ) {
+			wp_send_json_error( array( 'message' => __( 'That finding is no longer in the latest scan results. Run the scan again.', 'blt-secure' ) ) );
+		}
+
+		$finding = $stored['finding'];
+		foreach ( array( 'label', 'path', 'key' ) as $field ) {
+			if ( ! empty( $finding[ $field ] ) && is_string( $finding[ $field ] ) ) {
+				$label = sanitize_text_field( $finding[ $field ] );
+				break;
+			}
 		}
 
 		$this->plugin->whitelist->add(
 			$fingerprint,
 			array(
-				'scanner' => $scanner,
-				'label'   => $label,
+				'scanner' => $stored['scanner'],
+				'label'   => isset( $label ) ? $label : '',
 				'time'    => time(),
 				'user'    => get_current_user_id(),
 			)
 		);
 
 		wp_send_json_success( array( 'message' => __( 'Finding ignored.', 'blt-secure' ) ) );
+	}
+
+	/**
+	 * A scanner's stored finding list, or an empty array.
+	 *
+	 * @param string $option Results option name.
+	 * @param string $key    Findings key inside the payload.
+	 * @return array
+	 */
+	private function stored_findings( $option, $key ) {
+		$payload = get_option( $option, array() );
+		return is_array( $payload ) && isset( $payload[ $key ] ) && is_array( $payload[ $key ] ) ? $payload[ $key ] : array();
 	}
 
 	/**

@@ -101,4 +101,23 @@ class Test_Scan_Whitelist extends TestCase {
 		$this->assertSame( array(), $wl->active( array() ) );
 		$this->assertSame( array(), $wl->ignored( array() ) );
 	}
+
+	public function test_locate_only_finds_fingerprints_a_scanner_stored() {
+		$fp_core = str_repeat( 'a', 40 );
+		$fp_mal  = str_repeat( 'b', 40 );
+		$sources = array(
+			'core'    => array( array( 'path' => 'wp-load.php', 'fingerprint' => $fp_core ) ),
+			'malware' => array( array( 'path' => 'x.php', 'fingerprint' => $fp_mal ) ),
+		);
+
+		$hit = Blt_Secure_Scan_Whitelist::locate( $fp_mal, $sources );
+		$this->assertSame( 'malware', $hit['scanner'], 'The scanner comes from where it was found, not from the request.' );
+		$this->assertSame( 'x.php', $hit['finding']['path'] );
+		$this->assertSame( 'core', Blt_Secure_Scan_Whitelist::locate( $fp_core, $sources )['scanner'] );
+
+		$this->assertNull( Blt_Secure_Scan_Whitelist::locate( str_repeat( 'c', 40 ), $sources ), 'Well-formed but unknown fingerprint.' );
+		$this->assertNull( Blt_Secure_Scan_Whitelist::locate( 'not-a-fingerprint', $sources ) );
+		$this->assertNull( Blt_Secure_Scan_Whitelist::locate( $fp_core, array( 'core' => 'garbage', 'malware' => array( 'nope' ) ) ) );
+		$this->assertNull( Blt_Secure_Scan_Whitelist::locate( $fp_core, array() ) );
+	}
 }
