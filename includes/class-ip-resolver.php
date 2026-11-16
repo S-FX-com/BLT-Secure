@@ -168,6 +168,9 @@ class Blt_Secure_Ip_Resolver {
 			return false;
 		}
 
+		// A dual-stack socket can report an IPv4 peer as ::ffff:a.b.c.d; match it as IPv4.
+		$packed = self::unmap_ipv4( $packed );
+
 		foreach ( $ranges as $cidr ) {
 			if ( self::ip_in_cidr_packed( $packed, $cidr ) ) {
 				return true;
@@ -175,6 +178,43 @@ class Blt_Secure_Ip_Resolver {
 		}
 
 		return false;
+	}
+
+	/**
+	 * Collapse an IPv4-mapped IPv6 address (::ffff:a.b.c.d) to its 4-byte form.
+	 * Pure function.
+	 *
+	 * @param string $packed inet_pton()-packed IP.
+	 * @return string Packed IP (4 bytes for IPv4 / mapped, 16 for IPv6).
+	 */
+	private static function unmap_ipv4( $packed ) {
+		if ( 16 === strlen( $packed ) && str_repeat( "\0", 10 ) . "\xff\xff" === substr( $packed, 0, 12 ) ) {
+			return substr( $packed, 12 );
+		}
+		return $packed;
+	}
+
+	/**
+	 * Identity used to key rate-limit / lockout counters. IPv4 stays as-is; an
+	 * IPv6 address is truncated to its /64, because an ISP hands every
+	 * subscriber at least a /64 and a per-address counter would let one client
+	 * rotate through 2^64 addresses. Pure function.
+	 *
+	 * @param string $ip IP address.
+	 * @return string Canonical identity ('' when $ip is not a valid IP).
+	 */
+	public static function network_key( $ip ) {
+		$packed = @inet_pton( (string) $ip ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+		if ( false === $packed ) {
+			return '';
+		}
+
+		$packed = self::unmap_ipv4( $packed );
+		if ( 4 === strlen( $packed ) ) {
+			return (string) inet_ntop( $packed );
+		}
+
+		return inet_ntop( substr( $packed, 0, 8 ) . str_repeat( "\0", 8 ) ) . '/64';
 	}
 
 	/**

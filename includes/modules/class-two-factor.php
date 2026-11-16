@@ -32,6 +32,22 @@ class Blt_Secure_Two_Factor implements Blt_Secure_Module {
 	const MAX_ATTEMPTS = 5;
 
 	/**
+	 * Per-USER failed-code limit and window. The per-token limit above is not
+	 * enough on its own: an attacker holding the password simply logs in again
+	 * for a fresh token. This counter survives tokens.
+	 */
+	const USER_MAX_FAILURES = 10;
+	const USER_FAIL_WINDOW  = 15 * MINUTE_IN_SECONDS;
+
+	/**
+	 * Users authenticated by an application password during the current
+	 * authenticate() run (see note_app_password_auth()).
+	 *
+	 * @var int[]
+	 */
+	private $app_password_users = array();
+
+	/**
 	 * Settings.
 	 *
 	 * @var Blt_Secure_Options
@@ -108,8 +124,16 @@ class Blt_Secure_Two_Factor implements Blt_Secure_Module {
 	 * @return void
 	 */
 	public function boot() {
-		add_filter( 'authenticate', array( $this, 'maybe_interstitial' ), 50, 1 );
+		add_filter( 'authenticate', array( $this, 'begin_authentication' ), 0, 1 );
+		add_action( 'application_password_did_authenticate', array( $this, 'note_app_password_auth' ), 10, 1 );
+		add_filter( 'authenticate', array( $this, 'maybe_interstitial' ), 50, 3 );
 		add_action( 'login_form_blt_2fa', array( $this, 'handle_interstitial' ) );
+		add_filter( 'wp_login_errors', array( $this, 'add_login_error' ) );
+
+		// Registered on every request, not inside the profile POST handler:
+		// user-edit.php redirects after a successful save, so a hook added during
+		// that request is gone by the time the redirected page renders.
+		add_action( 'admin_notices', array( $this, 'show_recovery_codes_once' ) );
 
 		add_action( 'show_user_profile', array( $this, 'render_profile_section' ) );
 		add_action( 'personal_options_update', array( $this, 'handle_profile_save' ) );
@@ -206,14 +230,56 @@ class Blt_Secure_Two_Factor implements Blt_Secure_Module {
 	// -------------------------------------------------------------------
 
 	/**
+	 * Start of every authenticate() run: forget which users an application
+	 * password vouched for. system.multicall runs authenticate() once per call
+	 * inside ONE request, so this state must not outlive a single run.
+	 *
+	 * @param WP_User|WP_Error|null $user Auth result so far (passed through).
+	 * @return WP_User|WP_Error|null
+	 */
+	public function begin_authentication( $user ) {
+		$this->app_password_users = array();
+		return $user;
+	}
+
+	/**
+	 * Record that core accepted an application password for this user.
+	 *
+	 * did_action( 'application_password_did_authenticate' ) is a request-wide
+	 * counter that says nothing about WHICH user: in a system.multicall, call 1
+	 * with the attacker's own application password made call 2 (victim +
+	 * victim's plain password) look "application-password authenticated".
+	 *
+	 * @param WP_User $user Authenticated user.
+	 * @return void
+	 */
+	public function note_app_password_auth( $user ) {
+		if ( $user instanceof WP_User ) {
+			$this->app_password_users[] = (int) $user->ID;
+		}
+	}
+
+	/**
 	 * After the password passes, divert enrolled users to the interstitial
 	 * instead of completing the login.
 	 *
-	 * @param WP_User|WP_Error|null $user Auth result so far.
+	 * @param WP_User|WP_Error|null $user     Auth result so far.
+	 * @param string                $username Submitted username (empty for cookie re-validation).
+	 * @param string                $password Submitted password.
 	 * @return WP_User|WP_Error|null
 	 */
-	public function maybe_interstitial( $user ) {
+	public function maybe_interstitial( $user, $username = '', $password = '' ) {
 		if ( ! $user instanceof WP_User || ! $this->is_enrolled( $user->ID ) ) {
+			return $user;
+		}
+
+		// wp-login.php calls wp_signon() with EMPTY credentials on every visit to the
+		// login screen, and core's cookie handler (priority 30) answers with the
+		// already-logged-in user. That is a session being re-validated, not a
+		// password success: do not demand a second factor for it.
+		// Narrowly: only when the auth cookie really validates to this very user, so a
+		// third-party SSO handler that returns a user for empty credentials still meets 2FA.
+		if ( '' === (string) $username && '' === (string) $password && function_exists( 'wp_validate_auth_cookie' ) && (int) wp_validate_auth_cookie() === (int) $user->ID ) {
 			return $user;
 		}
 
@@ -221,12 +287,21 @@ class Blt_Secure_Two_Factor implements Blt_Secure_Module {
 		// passwords are their own credential and pass through; plain
 		// password auth over XML-RPC/REST is refused for 2FA users.
 		if ( ( defined( 'XMLRPC_REQUEST' ) && XMLRPC_REQUEST ) || ( defined( 'REST_REQUEST' ) && REST_REQUEST ) ) {
-			if ( did_action( 'application_password_did_authenticate' ) ) {
+			if ( in_array( (int) $user->ID, $this->app_password_users, true ) ) {
 				return $user;
 			}
 			return new WP_Error(
 				'blt_secure_2fa_required',
 				__( 'Two-factor authentication is required; password-only API access is disabled for this account. Use an application password.', 'blt-secure' )
+			);
+		}
+
+		// Too many wrong codes for this account recently: do not hand out fresh
+		// tokens (that is how a per-token limit gets walked around).
+		if ( $this->user_locked( (int) $user->ID ) ) {
+			return new WP_Error(
+				'blt_secure_locked',
+				__( '<strong>Error:</strong> Too many failed login attempts. Please try again later.', 'blt-secure' )
 			);
 		}
 
@@ -266,34 +341,78 @@ class Blt_Secure_Two_Factor implements Blt_Secure_Module {
 		$pending = get_transient( $key );
 
 		if ( ! is_array( $pending ) || empty( $pending['user_id'] ) ) {
-			$this->login_error_redirect( __( 'Your login session expired. Please sign in again.', 'blt-secure' ) );
+			$this->login_error_redirect( 'expired' );
 		}
 
+		$user_id = (int) $pending['user_id'];
+		$user    = get_user_by( 'id', $user_id );
+		if ( ! $user ) {
+			delete_transient( $key );
+			$this->login_error_redirect( 'expired' );
+		}
+
+		// Per-user lock first: it outlives tokens.
+		if ( $this->user_locked( $user_id ) ) {
+			delete_transient( $key );
+			$this->login_error_redirect( 'locked' );
+		}
+
+		// Count the attempt BEFORE checking the code and persist it immediately, so the
+		// window in which parallel requests can all see the old count is as small as
+		// transients allow. There is no atomic increment for transients (nor for
+		// options without an external object cache); the per-user counter below is the
+		// control that does not depend on this one, and bounds the over-count.
 		++$pending['attempts'];
 		if ( $pending['attempts'] > self::MAX_ATTEMPTS ) {
 			delete_transient( $key );
-			$this->alerting->notify( 'twofa_bruteforce', array( 'user' => (int) $pending['user_id'] ) );
-			$this->login_error_redirect( __( 'Too many incorrect codes. Please sign in again.', 'blt-secure' ) );
+			$this->alerting->notify( 'twofa_bruteforce', array( 'user' => $user_id ) );
+			$this->login_error_redirect( 'too_many' );
 		}
 		set_transient( $key, $pending, self::PENDING_TTL );
 
-		$user_id = (int) $pending['user_id'];
-
 		if ( ! $this->accept_code( $user_id, $code ) ) {
+			$hit = Blt_Secure_Login_Hardening::counter_hit( $this->fail_key( $user_id ), self::USER_MAX_FAILURES, self::USER_FAIL_WINDOW );
+			if ( $hit['tripped'] ) {
+				$this->alerting->notify( 'twofa_bruteforce', array( 'user' => $user_id ) );
+			}
+
+			// Let the login lockout (and any other login-failure listener) see it too.
+			do_action( 'wp_login_failed', $user->user_login, new WP_Error( 'blt_secure_2fa_failed', 'Incorrect two-factor code.' ) ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound
+
 			$this->render_interstitial( $token, __( 'That code is incorrect or expired. Try the current code from your app, or a recovery code.', 'blt-secure' ) );
 			exit;
 		}
 
 		delete_transient( $key );
+		Blt_Secure_Login_Hardening::counter_clear( $this->fail_key( $user_id ) );
 
 		wp_set_auth_cookie( $user_id, ! empty( $pending['remember'] ) );
-		$user = get_user_by( 'id', $user_id );
 		/** This action is documented in wp-includes/user.php */
 		do_action( 'wp_login', $user->user_login, $user ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound
 
 		$redirect = ! empty( $pending['redirect'] ) ? $pending['redirect'] : admin_url();
 		wp_safe_redirect( $redirect );
 		exit;
+	}
+
+	/**
+	 * Transient key of a user's failed-code counter.
+	 *
+	 * @param int $user_id User id.
+	 * @return string
+	 */
+	private function fail_key( $user_id ) {
+		return 'blt_sec_2fa_fail_' . (int) $user_id;
+	}
+
+	/**
+	 * Whether this user's second factor is locked after repeated wrong codes.
+	 *
+	 * @param int $user_id User id.
+	 * @return bool
+	 */
+	private function user_locked( $user_id ) {
+		return Blt_Secure_Login_Hardening::counter_locked( $this->fail_key( $user_id ), self::USER_MAX_FAILURES );
 	}
 
 	/**
@@ -405,14 +524,48 @@ class Blt_Secure_Two_Factor implements Blt_Secure_Module {
 	}
 
 	/**
-	 * Bounce back to the login form with a message.
+	 * Fixed set of interstitial failure messages, keyed by code. The URL carries
+	 * only the code, never free text, so a crafted link cannot put arbitrary
+	 * words on the login screen.
 	 *
-	 * @param string $message Error text.
+	 * @return string[]
+	 */
+	private static function error_messages() {
+		return array(
+			'expired'  => __( 'Your login session expired. Please sign in again.', 'blt-secure' ),
+			'too_many' => __( 'Too many incorrect codes. Please sign in again.', 'blt-secure' ),
+			'locked'   => __( 'Too many failed login attempts. Please try again later.', 'blt-secure' ),
+		);
+	}
+
+	/**
+	 * Bounce back to the login form with a message code.
+	 *
+	 * @param string $code One of error_messages() keys.
 	 * @return void
 	 */
-	private function login_error_redirect( $message ) {
-		wp_safe_redirect( add_query_arg( 'blt_2fa_error', rawurlencode( $message ), wp_login_url() ) );
+	private function login_error_redirect( $code ) {
+		wp_safe_redirect( add_query_arg( 'blt_2fa_error', rawurlencode( $code ), wp_login_url() ) );
 		exit;
+	}
+
+	/**
+	 * Show the message for ?blt_2fa_error=<code> on the login screen
+	 * (wp_login_errors filter).
+	 *
+	 * @param WP_Error $errors Login errors.
+	 * @return WP_Error
+	 */
+	public function add_login_error( $errors ) {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- display of a fixed message looked up by code.
+		$code     = isset( $_GET['blt_2fa_error'] ) && is_string( $_GET['blt_2fa_error'] ) ? sanitize_key( wp_unslash( $_GET['blt_2fa_error'] ) ) : '';
+		$messages = self::error_messages();
+
+		if ( $errors instanceof WP_Error && isset( $messages[ $code ] ) ) {
+			$errors->add( 'blt_secure_2fa_' . $code, $messages[ $code ] );
+		}
+
+		return $errors;
 	}
 
 	// -------------------------------------------------------------------
@@ -465,6 +618,10 @@ class Blt_Secure_Two_Factor implements Blt_Secure_Module {
 							<?php esc_html_e( 'Disable two-factor authentication', 'blt-secure' ); ?>
 						</label>
 					</p>
+					<p>
+						<label for="blt_2fa_disable_confirm"><?php esc_html_e( 'To disable it, confirm with a current code, a recovery code, or your account password:', 'blt-secure' ); ?></label><br />
+						<input type="password" name="blt_2fa_disable_confirm" id="blt_2fa_disable_confirm" autocomplete="off" class="regular-text" style="max-width:240px;" />
+					</p>
 				</td>
 			</tr>
 		<?php else : ?>
@@ -475,15 +632,30 @@ class Blt_Secure_Two_Factor implements Blt_Secure_Module {
 				$plain  = $this->crypto->decrypt( $pending );
 				$secret = is_wp_error( $plain ) ? '' : $plain;
 			}
-			if ( '' === $secret ) {
+			$stored = '' !== $secret;
+			if ( ! $stored ) {
 				$secret   = Blt_Secure_Totp::generate_secret();
 				$envelope = $this->crypto->encrypt( $secret );
 				if ( ! is_wp_error( $envelope ) ) {
 					update_user_meta( $user->ID, self::META_PENDING, $envelope );
+					$stored = true;
 				}
 			}
-			$uri = $this->totp->provisioning_uri( $secret, $user->user_login, wp_specialchars_decode( get_option( 'blogname' ), ENT_QUOTES ) );
-			?>
+
+			if ( ! $stored ) :
+				// Never show a QR code / key that was not saved: the user would scan it, and
+				// the confirmation step could never succeed.
+				?>
+				<tr>
+					<th><?php esc_html_e( 'Set up', 'blt-secure' ); ?></th>
+					<td>
+						<p class="description" style="color:#b32d2e;"><?php esc_html_e( 'Two-factor authentication cannot be set up right now: this server has no authenticated encryption available to store the secret safely (libsodium or OpenSSL AES-GCM). Ask your host to enable one of them.', 'blt-secure' ); ?></p>
+					</td>
+				</tr>
+				<?php
+			else :
+				$uri = $this->totp->provisioning_uri( $secret, $user->user_login, wp_specialchars_decode( get_option( 'blogname' ), ENT_QUOTES ) );
+				?>
 			<tr>
 				<th><?php esc_html_e( 'Set up', 'blt-secure' ); ?></th>
 				<td>
@@ -502,6 +674,7 @@ class Blt_Secure_Two_Factor implements Blt_Secure_Module {
 					</script>
 				</td>
 			</tr>
+			<?php endif; ?>
 		<?php endif; ?>
 		</table>
 		<?php
@@ -521,6 +694,14 @@ class Blt_Secure_Two_Factor implements Blt_Secure_Module {
 
 		// Disable request.
 		if ( ! empty( $_POST['blt_2fa_disable'] ) && $this->is_enrolled( $user_id ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Missing
+			// A hijacked session cookie must not be enough to strip the second factor:
+			// require proof (a current code, a recovery code, or the account password).
+			// phpcs:ignore WordPress.Security.NonceVerification.Missing, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- a password: must not be altered.
+			$proof = isset( $_POST['blt_2fa_disable_confirm'] ) && is_string( $_POST['blt_2fa_disable_confirm'] ) ? wp_unslash( $_POST['blt_2fa_disable_confirm'] ) : '';
+			if ( ! $this->confirm_disable( $user_id, $proof ) ) {
+				self::add_profile_error( 'blt_2fa_disable_denied', __( 'Two-factor authentication was NOT disabled: the confirmation did not match. Enter a current code, a recovery code, or your account password.', 'blt-secure' ) );
+				return;
+			}
 			$this->disable_for_user( $user_id );
 			$this->alerting->notify( 'twofa_disabled', array( 'user' => $user_id ) );
 			return;
@@ -534,22 +715,19 @@ class Blt_Secure_Two_Factor implements Blt_Secure_Module {
 
 		$pending = (string) get_user_meta( $user_id, self::META_PENDING, true );
 		if ( '' === $pending ) {
+			self::add_profile_error( 'blt_2fa_no_pending', __( 'Two-factor setup: no pending secret was found (the server may be unable to store one). 2FA was NOT enabled. Reload this page and try again.', 'blt-secure' ) );
 			return;
 		}
 		$secret = $this->crypto->decrypt( $pending );
 		if ( is_wp_error( $secret ) ) {
 			delete_user_meta( $user_id, self::META_PENDING );
+			self::add_profile_error( 'blt_2fa_no_pending', __( 'Two-factor setup: the pending secret could not be read. 2FA was NOT enabled. Reload this page and scan the new code.', 'blt-secure' ) );
 			return;
 		}
 
 		$slice = $this->totp->verify( $secret, $code );
 		if ( false === $slice ) {
-			add_action(
-				'user_profile_update_errors',
-				static function ( $errors ) {
-					$errors->add( 'blt_2fa_bad_code', __( 'Two-factor setup: that code did not match — 2FA was NOT enabled. Re-scan and try again.', 'blt-secure' ) );
-				}
-			);
+			self::add_profile_error( 'blt_2fa_bad_code', __( 'Two-factor setup: that code did not match — 2FA was NOT enabled. Re-scan and try again.', 'blt-secure' ) );
 			return;
 		}
 
@@ -568,8 +746,55 @@ class Blt_Secure_Two_Factor implements Blt_Secure_Module {
 		update_user_meta( $user_id, self::META_RECOVERY, $hashes );
 		set_transient( 'blt_sec_2fa_codes_' . $user_id, $codes, 5 * MINUTE_IN_SECONDS );
 
-		add_action( 'admin_notices', array( $this, 'show_recovery_codes_once' ) );
+		// show_recovery_codes_once() is registered in boot(); the page is redirected after this save.
 		$this->alerting->notify( 'twofa_enabled', array( 'user' => $user_id ) );
+	}
+
+	/**
+	 * Queue an error for the profile form (shown by edit_user()'s error pass).
+	 *
+	 * @param string $code    Error code.
+	 * @param string $message Message.
+	 * @return void
+	 */
+	private static function add_profile_error( $code, $message ) {
+		add_action(
+			'user_profile_update_errors',
+			static function ( $errors ) use ( $code, $message ) {
+				$errors->add( $code, $message );
+			}
+		);
+	}
+
+	/**
+	 * Proof required to switch 2FA off: the account password, or a valid
+	 * current/recovery code. Wrong proofs count toward the same per-user lock
+	 * as wrong login codes, so this form is not a guessing oracle for someone
+	 * holding a stolen session.
+	 *
+	 * @param int    $user_id User id.
+	 * @param string $proof   Submitted proof.
+	 * @return bool
+	 */
+	private function confirm_disable( $user_id, $proof ) {
+		$proof = trim( (string) $proof );
+		if ( '' === $proof || $this->user_locked( $user_id ) ) {
+			return false;
+		}
+
+		$user = get_userdata( $user_id );
+		$ok   = ( $user && wp_check_password( $proof, $user->user_pass, $user_id ) ) || $this->accept_code( $user_id, $proof );
+
+		if ( $ok ) {
+			Blt_Secure_Login_Hardening::counter_clear( $this->fail_key( $user_id ) );
+			return true;
+		}
+
+		$hit = Blt_Secure_Login_Hardening::counter_hit( $this->fail_key( $user_id ), self::USER_MAX_FAILURES, self::USER_FAIL_WINDOW );
+		if ( $hit['tripped'] ) {
+			$this->alerting->notify( 'twofa_bruteforce', array( 'user' => $user_id ) );
+		}
+		return false;
 	}
 
 	/**
@@ -578,6 +803,13 @@ class Blt_Secure_Two_Factor implements Blt_Secure_Module {
 	 * @return void
 	 */
 	public function show_recovery_codes_once() {
+		// Hooked on every admin request (see boot()); only the profile screens can have codes
+		// waiting, so skip the transient read everywhere else.
+		global $pagenow;
+		if ( ! in_array( $pagenow, array( 'profile.php', 'user-edit.php' ), true ) ) {
+			return;
+		}
+
 		$user_id = get_current_user_id();
 		$codes   = get_transient( 'blt_sec_2fa_codes_' . $user_id );
 		delete_transient( 'blt_sec_2fa_codes_' . $user_id );

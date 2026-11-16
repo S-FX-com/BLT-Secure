@@ -429,3 +429,120 @@ foreach ( $blt_test_requires as $blt_test_file ) {
 		require_once BLT_SECURE_DIR . $blt_test_file;
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Shims for the login / 2FA / file-guard / privacy tests.
+// ---------------------------------------------------------------------------
+
+if ( ! class_exists( 'WP_User' ) ) {
+	/**
+	 * Minimal WP_User stand-in.
+	 */
+	class WP_User {
+		/**
+		 * User id.
+		 *
+		 * @var int
+		 */
+		public $ID;
+
+		/**
+		 * Login name.
+		 *
+		 * @var string
+		 */
+		public $user_login;
+
+		/**
+		 * Roles.
+		 *
+		 * @var string[]
+		 */
+		public $roles = array();
+
+		/**
+		 * Constructor.
+		 *
+		 * @param int    $id    Id.
+		 * @param string $login Login.
+		 */
+		public function __construct( $id = 0, $login = '' ) {
+			$this->ID         = (int) $id;
+			$this->user_login = $login;
+		}
+	}
+}
+
+$GLOBALS['blt_test_user_meta'] = array();
+
+if ( ! function_exists( 'get_user_meta' ) ) {
+	/**
+	 * WP shim.
+	 *
+	 * @param int    $user_id User id.
+	 * @param string $key     Meta key.
+	 * @param bool   $single  Single (ignored).
+	 * @return mixed
+	 */
+	function get_user_meta( $user_id, $key, $single = false ) { // phpcs:ignore
+		return isset( $GLOBALS['blt_test_user_meta'][ $user_id ][ $key ] ) ? $GLOBALS['blt_test_user_meta'][ $user_id ][ $key ] : '';
+	}
+}
+
+if ( ! function_exists( 'update_user_meta' ) ) {
+	/**
+	 * WP shim.
+	 *
+	 * @param int    $user_id User id.
+	 * @param string $key     Meta key.
+	 * @param mixed  $value   Value.
+	 * @return bool
+	 */
+	function update_user_meta( $user_id, $key, $value ) {
+		$GLOBALS['blt_test_user_meta'][ $user_id ][ $key ] = $value;
+		return true;
+	}
+}
+
+if ( ! function_exists( 'delete_user_meta' ) ) {
+	/**
+	 * WP shim.
+	 *
+	 * @param int    $user_id User id.
+	 * @param string $key     Meta key.
+	 * @return bool
+	 */
+	function delete_user_meta( $user_id, $key ) {
+		unset( $GLOBALS['blt_test_user_meta'][ $user_id ][ $key ] );
+		return true;
+	}
+}
+
+if ( ! function_exists( 'untrailingslashit' ) ) {
+	/**
+	 * WP shim.
+	 *
+	 * @param string $value Path.
+	 * @return string
+	 */
+	function untrailingslashit( $value ) {
+		return rtrim( (string) $value, '/\\' );
+	}
+}
+
+if ( ! function_exists( 'get_current_user_id' ) ) {
+	/**
+	 * WP shim.
+	 *
+	 * @return int
+	 */
+	function get_current_user_id() {
+		return 0;
+	}
+}
+
+foreach ( array( 'includes/modules/class-headers.php', 'includes/modules/class-privacy.php', 'includes/modules/class-file-guard.php', 'includes/modules/class-two-factor.php' ) as $blt_test_file ) {
+	if ( file_exists( BLT_SECURE_DIR . $blt_test_file ) ) {
+		require_once BLT_SECURE_DIR . $blt_test_file;
+	}
+}
