@@ -153,6 +153,11 @@ final class Blt_Secure {
 
 		$this->ip_resolver->boot();
 
+		// Local, read-only findings surface for BLT Connect (the Buoy fleet agent). One
+		// add_filter, no I/O, and registered here rather than in a module so a disabled
+		// module cannot take it away. BLT Connect is the only transport to Buoy.
+		( new Blt_Secure_Buoy_Bridge( $this->whitelist ) )->boot();
+
 		if ( Blt_Secure_Updater::should_load() ) {
 			$this->updater = new Blt_Secure_Updater( $this->credentials );
 			$this->updater->boot();

@@ -283,4 +283,15 @@ class Test_Buoy_Bridge extends TestCase {
 		$bridge->boot();
 		$this->addToAssertionCount( 1 ); // Registering must not throw or do I/O.
 	}
+
+	public function test_the_core_singleton_boots_the_bridge_outside_any_module() {
+		// A module can be disabled; the findings surface must not depend on one.
+		$root = dirname( __DIR__ );
+		$main = (string) file_get_contents( $root . '/blt-secure.php' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
+		$core = (string) file_get_contents( $root . '/includes/class-blt-secure.php' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
+
+		$this->assertStringContainsString( "includes/class-buoy-bridge.php'", $main );
+		$this->assertStringContainsString( 'new Blt_Secure_Buoy_Bridge( $this->whitelist ) )->boot()', $core );
+		$this->assertStringNotContainsString( 'Blt_Secure_Buoy_Bridge', substr( $core, 0, (int) strpos( $core, 'private function init()' ) ), 'Wired inside init(), not as a module.' );
+	}
 }
