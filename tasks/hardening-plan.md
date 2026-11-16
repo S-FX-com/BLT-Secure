@@ -32,8 +32,9 @@ CI + 7.4 gate (`38f0a9f`), whitelist hardening (`dca06db`).
 
 1. **Buoy `[HARD]` §6.2 — new commands** (`secure.scan` tier 1, `secure.configure` tier 3 + step-up). Spec 04. Needs
    your written approval and a DECISIONS entry. Everything else in the link works without it.
-2. **Buoy findings triage** (spec 05). Nothing in Buoy can clear an open `critical` finding except hand-edited SQL.
-   Until triage exists, BLT Secure sends `high` at most. Approve building the triage route + dashboard view?
+2. ~~**Buoy findings triage** (spec 05)~~ — **approved and built 2026-11-16** (Buoy PR #9, D-2026-11-16-02). **Still open:**
+   should BLT Secure now *send* `critical` (`blt_secure_buoy_allow_critical`, off by default)? Item 5 of the spec
+   (auto-resolving critical findings) was not approved and is not built.
 3. **TOR folded into the ASN challenge rule** (2 custom rules instead of 3) so the whole plugin fits the Free plan's
    5 rules. The cost: ASN and TOR can no longer be toggled separately. Alternative: keep 3 rules and accept that a
    Free zone cannot hold every card.
@@ -116,7 +117,7 @@ route for Buoy, and "connected" simply means the site is enrolled in Buoy. The l
 | 1 | Findings: `{severity,signature,path}`, ≤199 + truncation sentinel, whitelist-aware, `critical`→`high`; Buoy auto-resolves non-critical findings missing from a **complete** list | no | **Done**, verified end to end; staging smoke left (spec 02) |
 | 2 | Posture (health score, scan states, 2FA coverage, CF connection, event counts) via a second filter on the same `inventory.read`; additive migration; dashboard card | no (no new commands) | Spec 03 |
 | 3 | `secure.scan`, `secure.configure` commands | **yes — `[HARD]`** | Spec 04 |
-| — | Findings triage route + view in Buoy | yes (touches §11.4 surface) | Spec 05 |
+| — | Findings triage route + view in Buoy | yes (touches §11.4 surface) | **Approved and built** (Buoy PR #9); sending `critical` is still a separate call |
 | — | Retire legacy fleet/`dashboard/` | yes | Spec 06 |
 
 Safeguards baked in: critical is never auto-resolved and never sent by default; a truncated or incomplete scan list

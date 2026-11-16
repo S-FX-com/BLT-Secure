@@ -190,7 +190,8 @@
   - AC: `{severity,signature,path}` only; ≤199 + `blt_secure:truncated` sentinel; whitelisted excluded; `critical` capped at `high`; verified end to end against Buoy's real ingest. Spec: `specs/02-buoy-link-stage1-findings.md`.
 - [ ] **Stage 1 staging smoke** — both transports (poll and push), site enrolled in Buoy.
 - [ ] **Stage 2 — posture in inventory** (no new commands) — `specs/03-buoy-link-stage2-posture.md`.
-- [ ] **Findings triage in Buoy** — `specs/05-buoy-findings-triage.md` (prerequisite for ever sending `critical`).
+- [x] **Findings triage in Buoy** — approved 2026-11-16 and built (Buoy PR #9): list + triage routes, scoped, step-up and a reason for critical, audited, dashboard view. `specs/05-buoy-findings-triage.md`.
+- [ ] **Decide whether BLT Secure sends `critical`** (`blt_secure_buoy_allow_critical`) now that triage exists; and stage-test the triage flow on a real site.
 - [ ] **Stage 3 — `secure.*` commands** — ⛔ needs Shane's written approval (`[HARD]` vocabulary) — `specs/04-buoy-link-stage3-commands.md`.
 - [ ] **Retire the legacy fleet reporter and `dashboard/`** — after Stage 2 — `specs/06-retire-legacy-fleet.md`.
 

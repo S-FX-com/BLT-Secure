@@ -1,4 +1,15 @@
-# 05 — Buoy findings triage (route + dashboard)   ⛔ confirm scope with Shane
+# 05 — Buoy findings triage (route + dashboard)   ✅ APPROVED 2026-11-16 — items 1–4 BUILT
+
+## Status
+**Approved by Shane on 2026-11-16 and built** in Buoy (items 1–4): `GET /api/admin/findings`,
+`POST /api/admin/findings/:id/triage`, the Findings dashboard view and the site-row badge. Recorded as
+Buoy `DECISIONS.md` D-2026-11-16-02; runbook RB-9; threat-model section updated. Delivered in Buoy PR #9
+(same branch as the auto-resolve change).
+**Item 5 (auto-resolving critical findings) was NOT approved and is NOT built** — the recommendation stays "no".
+**Still your decision:** whether BLT Secure should now *send* `critical` (`blt_secure_buoy_allow_critical`,
+default off). Triage exists, but a regex heuristic being able to hold a client's updates is a separate risk call.
+One addition beyond the original text: ingest no longer re-opens a finding a person marked `triaged` or
+`false_positive`, otherwise a false-positive on a finding the site keeps reporting came straight back as open.
 
 ## Why
 In Buoy nothing can move a `malware_findings` row out of `open` except the new auto-resolve for
