@@ -49,8 +49,9 @@ class Blt_Secure_Feeds {
 	/**
 	 * Normalize one raw feed entry, or null when it is unusable.
 	 *
-	 * Pure function (unit-tested). Requires a non-empty id, a valid http(s)
-	 * url, and a supported format; other fields get sane defaults.
+	 * Pure function (unit-tested). Requires a non-empty id, a valid https
+	 * url (plain http is rejected: a feed fetched over http can be tampered
+	 * with in transit, and these feeds drive blocking), and a supported format; other fields get sane defaults.
 	 *
 	 * @param mixed $raw Raw entry from JSON.
 	 * @return array|null
@@ -67,7 +68,7 @@ class Blt_Secure_Feeds {
 		if ( '' === $id || ! self::valid_format( $format ) ) {
 			return null;
 		}
-		if ( ! preg_match( '#^https?://#i', $url ) ) {
+		if ( ! preg_match( '#^https://#i', $url ) ) {
 			return null;
 		}
 

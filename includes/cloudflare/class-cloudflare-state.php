@@ -87,8 +87,36 @@ class Blt_Secure_Cloudflare_State {
 	 * @return void
 	 */
 	public function set_zone( array $zone ) {
-		$state         = $this->all();
+		$state = $this->all();
+
+		// Deployment records hold ruleset/rule/app ids that belong to ONE zone.
+		// Moving to a different zone (or account) orphans them, and a later
+		// Remove would aim old ids at the new zone, so forget them now. Rules
+		// still carry their blt-secure-* refs and are re-adopted on redeploy.
+		$old_zone_id = isset( $state['zone']['zone_id'] ) ? (string) $state['zone']['zone_id'] : '';
+		$new_zone_id = isset( $zone['zone_id'] ) ? (string) $zone['zone_id'] : '';
+		if ( '' !== $old_zone_id && $old_zone_id !== $new_zone_id ) {
+			unset( $state['deployments'] );
+		}
+
 		$state['zone'] = $zone;
+		update_option( self::OPTION, $state, false );
+	}
+
+	/**
+	 * Refresh only the plan fields of the stored zone (zone/account/host are
+	 * untouched, deployments are preserved).
+	 *
+	 * @param string $plan Raw plan id/name from Cloudflare.
+	 * @return void
+	 */
+	public function update_plan( $plan ) {
+		$state = $this->all();
+		if ( empty( $state['zone']['zone_id'] ) ) {
+			return;
+		}
+		$state['zone']['plan']         = (string) $plan;
+		$state['zone']['plan_checked'] = time();
 		update_option( self::OPTION, $state, false );
 	}
 

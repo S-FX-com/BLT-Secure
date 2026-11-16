@@ -9,13 +9,22 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+require_once dirname( __DIR__ ) . '/feeds/class-ioc-parser.php';
+
 /**
- * Deploys/removes the five Phase-1 Cloudflare features idempotently.
+ * Deploys/removes the Cloudflare features idempotently.
  *
  * Deploy = reconcile: fetch the phase entrypoint ruleset, index existing
  * rules by our "ref", PATCH matches and POST the missing — never PUT the
- * whole entrypoint (other tools' rules live there too). Removal deletes by
- * stored ID and treats 404 as success.
+ * whole entrypoint (other tools' rules live there too). Removal is ref-based
+ * too: it deletes only rules in the entrypoint whose ref is one of this
+ * feature's own "blt-secure-*" refs, so orphans from a half-finished deploy
+ * stay removable and nothing else in the ruleset can be touched.
+ *
+ * Objects that are account-wide rather than ref-addressable (Access apps, the
+ * IP list, leaked-credential detections) carry a host-scoped name, and the
+ * deployment record remembers whether this plugin created them or merely
+ * adopted an existing one. Adopted objects are never deleted.
  */
 class Blt_Secure_Cloudflare_Deployer {
 
@@ -36,23 +45,49 @@ class Blt_Secure_Cloudflare_Deployer {
 	private $state;
 
 	/**
+	 * This site's host (from home_url) for the zone-drift guard; null skips it.
+	 *
+	 * @var string|null
+	 */
+	private $site_host;
+
+	/**
+	 * Human-readable notes from the last operation (e.g. adopted objects left in place).
+	 *
+	 * @var string[]
+	 */
+	private $notes = array();
+
+	/**
 	 * Constructor.
 	 *
 	 * @param Blt_Secure_Cloudflare_Api   $api API client.
 	 * @param Blt_Secure_Cloudflare_State $state State store.
+	 * @param string|null                 $site_host This site's host; when given, every mutation refuses to run if the stored zone was connected for a different host.
 	 */
-	public function __construct( Blt_Secure_Cloudflare_Api $api, Blt_Secure_Cloudflare_State $state ) {
-		$this->api   = $api;
-		$this->state = $state;
+	public function __construct( Blt_Secure_Cloudflare_Api $api, Blt_Secure_Cloudflare_State $state, $site_host = null ) {
+		$this->api       = $api;
+		$this->state     = $state;
+		$this->site_host = null === $site_host ? null : strtolower( (string) $site_host );
 	}
 
 	/**
-	 * Verify token and (re)discover the zone; persists identity.
+	 * Notes produced by the last remove()/deploy() call.
+	 *
+	 * @return string[]
+	 */
+	public function notes() {
+		return $this->notes;
+	}
+
+	/**
+	 * Verify token and (re)discover the zone.
 	 *
 	 * @param string $host Site host.
+	 * @param bool   $persist Persist the zone identity (false lets the caller store the token first).
 	 * @return array|WP_Error Zone summary.
 	 */
-	public function connect( $host ) {
+	public function connect( $host, $persist = true ) {
 		$verify = $this->api->verify_token();
 		if ( is_wp_error( $verify ) ) {
 			return $verify;
@@ -64,15 +99,82 @@ class Blt_Secure_Cloudflare_Deployer {
 		}
 
 		$summary = array(
-			'zone_id'    => isset( $zone['id'] ) ? $zone['id'] : '',
-			'zone_name'  => isset( $zone['name'] ) ? $zone['name'] : '',
-			'account_id' => isset( $zone['account']['id'] ) ? $zone['account']['id'] : '',
-			'plan'       => isset( $zone['plan']['legacy_id'] ) ? $zone['plan']['legacy_id'] : ( isset( $zone['plan']['name'] ) ? strtolower( $zone['plan']['name'] ) : '' ),
-			'host'       => $host,
+			'zone_id'      => isset( $zone['id'] ) ? $zone['id'] : '',
+			'zone_name'    => isset( $zone['name'] ) ? $zone['name'] : '',
+			'account_id'   => isset( $zone['account']['id'] ) ? $zone['account']['id'] : '',
+			'plan'         => self::extract_plan( $zone ),
+			'plan_checked' => time(),
+			'host'         => $host,
 		);
-		$this->state->set_zone( $summary );
+		if ( $persist ) {
+			$this->state->set_zone( $summary );
+		}
 
 		return $summary;
+	}
+
+	/**
+	 * Raw plan id/name from a zone object.
+	 *
+	 * @param array $zone Zone object.
+	 * @return string
+	 */
+	private static function extract_plan( array $zone ) {
+		if ( isset( $zone['plan']['legacy_id'] ) && '' !== $zone['plan']['legacy_id'] ) {
+			return (string) $zone['plan']['legacy_id'];
+		}
+		return isset( $zone['plan']['name'] ) ? strtolower( (string) $zone['plan']['name'] ) : '';
+	}
+
+	/**
+	 * Refuse to mutate when this site's host is not the host the zone was
+	 * connected for (site migrated, domain changed, staging clone sharing the
+	 * production token and state).
+	 *
+	 * @param array $zone Zone identity.
+	 * @return true|WP_Error
+	 */
+	private function guard_host( array $zone ) {
+		if ( null === $this->site_host || empty( $zone['host'] ) ) {
+			return true;
+		}
+		if ( strtolower( (string) $zone['host'] ) === $this->site_host ) {
+			return true;
+		}
+		return new WP_Error(
+			'blt_cf_host_mismatch',
+			sprintf(
+				/* translators: 1: host the Cloudflare zone was connected for, 2: this site's current host */
+				__( 'Cloudflare was connected for %1$s but this site is now %2$s (site moved, domain changed, or this is a clone). Nothing was changed — disconnect and reconnect your token on this site first.', 'blt-secure' ),
+				$zone['host'],
+				$this->site_host
+			)
+		);
+	}
+
+	/**
+	 * The zone's plan, normalized (free|pro|business|enterprise|''). Refreshed
+	 * from Cloudflare at most every 5 minutes; falls back to the stored value.
+	 *
+	 * @param array $zone Zone identity.
+	 * @return string
+	 */
+	private function current_plan( array $zone ) {
+		$stored  = isset( $zone['plan'] ) ? (string) $zone['plan'] : '';
+		$checked = isset( $zone['plan_checked'] ) ? (int) $zone['plan_checked'] : 0;
+
+		if ( $checked < time() - 300 ) {
+			$fresh = $this->api->get( '/zones/' . Blt_Secure_Cloudflare_Api::seg( $zone['zone_id'] ) );
+			if ( ! is_wp_error( $fresh ) ) {
+				$raw = self::extract_plan( $fresh );
+				if ( '' !== $raw ) {
+					$stored = $raw;
+					$this->state->update_plan( $raw );
+				}
+			}
+		}
+
+		return Blt_Secure_Rule_Definitions::normalize_plan( $stored );
 	}
 
 	/**
@@ -83,23 +185,44 @@ class Blt_Secure_Cloudflare_Deployer {
 	 * @return array|WP_Error Deployment record.
 	 */
 	public function deploy( $feature, array $config = array() ) {
+		$this->notes = array();
+
 		$zone = $this->state->zone();
 		if ( empty( $zone['zone_id'] ) ) {
 			return new WP_Error( 'blt_cf_not_connected', __( 'Cloudflare is not connected yet — verify your token first.', 'blt-secure' ) );
 		}
+		if ( ! in_array( $feature, self::FEATURES, true ) ) {
+			return new WP_Error( 'blt_cf_unknown_feature', __( 'Unknown Cloudflare feature.', 'blt-secure' ) );
+		}
+
+		$guard = $this->guard_host( $zone );
+		if ( is_wp_error( $guard ) ) {
+			return $guard;
+		}
+
+		// Cheap input validation first: a bad request makes no API calls at all.
+		if ( 'country_block' === $feature ) {
+			$wanted = isset( $config['countries'] ) ? Blt_Secure_Rule_Definitions::sanitize_country_codes( $config['countries'] ) : array();
+			if ( empty( $wanted ) ) {
+				return new WP_Error( 'blt_cf_validation', __( 'Choose at least one country to block first.', 'blt-secure' ) );
+			}
+		}
+
+		$plan = $this->current_plan( $zone );
+		$slug = isset( $config['login_slug'] ) ? (string) $config['login_slug'] : '';
+		$base = isset( $config['base_path'] ) ? (string) $config['base_path'] : '';
 
 		switch ( $feature ) {
 			case 'waf_managed':
-				return $this->deploy_waf_managed( $zone, $config );
+				return $this->deploy_waf_managed( $zone, $config, $plan );
 			case 'custom_pack':
-				return $this->deploy_ruleset_feature( $zone, 'custom_pack', Blt_Secure_Rule_Definitions::PHASE_CUSTOM, Blt_Secure_Rule_Definitions::custom_pack_rules() );
+				return $this->deploy_ruleset_feature( $zone, 'custom_pack', Blt_Secure_Rule_Definitions::PHASE_CUSTOM, Blt_Secure_Rule_Definitions::custom_pack_rules( $base ), array(), $plan, array( 'blt-secure-custom-tor' ) );
 			case 'country_block':
-				return $this->deploy_country_block( $zone, $config );
+				return $this->deploy_country_block( $zone, $config, $plan );
 			case 'rate_limit':
-				$slug = isset( $config['login_slug'] ) ? (string) $config['login_slug'] : '';
-				return $this->deploy_ruleset_feature( $zone, 'rate_limit', Blt_Secure_Rule_Definitions::PHASE_RATELIMIT, Blt_Secure_Rule_Definitions::rate_limit_rules( $slug ) );
+				return $this->deploy_ruleset_feature( $zone, 'rate_limit', Blt_Secure_Rule_Definitions::PHASE_RATELIMIT, Blt_Secure_Rule_Definitions::rate_limit_rules( $slug, $plan, $base ), array(), $plan );
 			case 'leaked_creds':
-				return $this->deploy_leaked_creds( $zone );
+				return $this->deploy_leaked_creds( $zone, $plan );
 			case 'access':
 				return $this->deploy_access( $zone, $config );
 		}
@@ -114,11 +237,23 @@ class Blt_Secure_Cloudflare_Deployer {
 	 * @return true|WP_Error
 	 */
 	public function remove( $feature ) {
+		$this->notes = array();
+
 		$zone   = $this->state->zone();
 		$record = $this->state->deployment( $feature );
 
-		if ( null === $record ) {
-			return true; // Nothing deployed.
+		if ( ! in_array( $feature, self::FEATURES, true ) ) {
+			return new WP_Error( 'blt_cf_unknown_feature', __( 'Unknown Cloudflare feature.', 'blt-secure' ) );
+		}
+		if ( empty( $zone['zone_id'] ) ) {
+			// Nothing can be reached; just forget any stale record.
+			$this->state->clear_deployment( $feature );
+			return true;
+		}
+
+		$guard = $this->guard_host( $zone );
+		if ( is_wp_error( $guard ) ) {
+			return $guard;
 		}
 
 		switch ( $feature ) {
@@ -126,19 +261,18 @@ class Blt_Secure_Cloudflare_Deployer {
 			case 'custom_pack':
 			case 'country_block':
 			case 'rate_limit':
-				$result = $this->remove_rules( $zone, $record );
+				$result = $this->remove_rules( $zone, $feature );
 				break;
 
 			case 'leaked_creds':
-				$result = $this->remove_leaked_creds( $zone, $record );
+				$result = $this->remove_leaked_creds( $zone, is_array( $record ) ? $record : array() );
 				break;
 
-			case 'access':
+			default: // access.
+				if ( null === $record ) {
+					return true; // Nothing deployed.
+				}
 				$result = $this->remove_access( $zone, $record );
-				break;
-
-			default:
-				return new WP_Error( 'blt_cf_unknown_feature', __( 'Unknown Cloudflare feature.', 'blt-secure' ) );
 		}
 
 		if ( is_wp_error( $result ) ) {
@@ -168,71 +302,166 @@ class Blt_Secure_Cloudflare_Deployer {
 	/**
 	 * Push a set of IP/CIDR indicators to the account IP List and ensure the
 	 * custom-phase rule that blocks them exists. Idempotent: the list is
-	 * reused by name and the rule reconciled by ref.
+	 * reused (by stored id, then by host-scoped name) and the rule reconciled
+	 * by ref. The custom-rule budget is checked BEFORE any list is created or
+	 * filled, the bulk operation is polled (bounded) so a failed update is
+	 * reported instead of read as success.
 	 *
 	 * @param string[] $ips Validated IP/CIDR strings.
 	 * @return array|WP_Error Deployment record (list_id, rule_ids, count).
 	 */
 	public function sync_ioc_list( array $ips ) {
+		$this->notes = array();
+
 		$zone = $this->state->zone();
 		if ( empty( $zone['zone_id'] ) || empty( $zone['account_id'] ) ) {
 			return new WP_Error( 'blt_cf_not_connected', __( 'Cloudflare is not connected yet — verify your token first.', 'blt-secure' ) );
 		}
+		$guard = $this->guard_host( $zone );
+		if ( is_wp_error( $guard ) ) {
+			return $guard;
+		}
 
-		$list = $this->find_or_create_ioc_list( $zone['account_id'] );
+		// Defensive: only entries Cloudflare accepts (IPv4 /8-/32, IPv6 /12-/128).
+		$items = array();
+		foreach ( $ips as $ip ) {
+			if ( Blt_Secure_Ioc_Parser::is_cf_list_item( $ip ) ) {
+				$items[] = array( 'ip' => $ip );
+			}
+		}
+		if ( empty( $items ) ) {
+			return new WP_Error( 'blt_cf_validation', __( 'No indicators were valid for a Cloudflare IP list.', 'blt-secure' ) );
+		}
+
+		$plan   = $this->current_plan( $zone );
+		$record = $this->state->deployment( 'ioc' );
+		$record = is_array( $record ) ? $record : array();
+		$name   = ! empty( $record['list_name'] ) ? (string) $record['list_name'] : Blt_Secure_Rule_Definitions::ioc_list_name( isset( $zone['host'] ) ? $zone['host'] : '' );
+		$rules  = Blt_Secure_Rule_Definitions::ioc_block_rules( $name );
+
+		$budget = $this->preflight_budget( $zone, Blt_Secure_Rule_Definitions::PHASE_CUSTOM, $rules, $plan );
+		if ( is_wp_error( $budget ) ) {
+			return $budget;
+		}
+
+		$list = $this->find_or_create_ioc_list( $zone['account_id'], $name, $record );
 		if ( is_wp_error( $list ) ) {
 			return $list;
 		}
-		$list_id = isset( $list['id'] ) ? $list['id'] : '';
+		$list_id = isset( $list['id'] ) ? (string) $list['id'] : '';
 		if ( '' === $list_id ) {
 			return new WP_Error( 'blt_cf_validation', __( 'Cloudflare did not return an IP List id.', 'blt-secure' ) );
 		}
-
-		// Bulk-replace the list contents (Cloudflare expects [{ip:…}, …]).
-		$items = array();
-		foreach ( $ips as $ip ) {
-			$items[] = array( 'ip' => $ip );
+		// An adopted list keeps its own name (e.g. the pre-1.2 shared name), and
+		// the block rule must reference the name of the list actually used.
+		if ( ! empty( $list['name'] ) ) {
+			$name  = (string) $list['name'];
+			$rules = Blt_Secure_Rule_Definitions::ioc_block_rules( $name );
 		}
-		$replaced = $this->api->put( '/accounts/' . $zone['account_id'] . '/rules/lists/' . $list_id . '/items', $items );
+
+		$account = Blt_Secure_Cloudflare_Api::seg( $zone['account_id'] );
+
+		// Bulk-replace the list contents (Cloudflare expects [{ip:…}, …]); the
+		// call is asynchronous and returns an operation id.
+		$replaced = $this->api->put( '/accounts/' . $account . '/rules/lists/' . Blt_Secure_Cloudflare_Api::seg( $list_id ) . '/items', $items );
 		if ( is_wp_error( $replaced ) ) {
 			return $replaced;
 		}
+
+		$pending = false;
+		if ( ! empty( $replaced['operation_id'] ) ) {
+			$op = $this->await_bulk_operation( $account, (string) $replaced['operation_id'] );
+			if ( is_wp_error( $op ) ) {
+				return $op;
+			}
+			$pending = 'pending' === $op;
+		}
+
+		$owned = ! empty( $list['__created'] ) || ( ! empty( $record['list_owned'] ) && isset( $record['list_id'] ) && (string) $record['list_id'] === $list_id );
 
 		// Ensure the referencing block rule (custom phase).
 		return $this->deploy_ruleset_feature(
 			$zone,
 			'ioc',
 			Blt_Secure_Rule_Definitions::PHASE_CUSTOM,
-			Blt_Secure_Rule_Definitions::ioc_block_rules(),
+			$rules,
 			array(
-				'list_id' => $list_id,
-				'count'   => count( $ips ),
-			)
+				'list_id'      => $list_id,
+				'list_name'    => $name,
+				'list_owned'   => (bool) $owned,
+				'list_pending' => $pending,
+				'count'        => count( $items ),
+			),
+			$plan
 		);
 	}
 
 	/**
-	 * Delete the IOC block rule and the account IP List. 404 = already gone.
+	 * Poll a list bulk operation, bounded (about 10 s worst case).
+	 *
+	 * @param string $account Account id path segment.
+	 * @param string $operation_id Operation id.
+	 * @return true|string|WP_Error true when completed, 'pending' when still running, WP_Error on failure.
+	 */
+	private function await_bulk_operation( $account, $operation_id ) {
+		for ( $i = 0; $i < 5; $i++ ) {
+			$status = $this->api->get( '/accounts/' . $account . '/rules/lists/bulk_operations/' . Blt_Secure_Cloudflare_Api::seg( $operation_id ) );
+			if ( is_wp_error( $status ) ) {
+				return $status;
+			}
+			$state = isset( $status['status'] ) ? strtolower( (string) $status['status'] ) : '';
+			if ( 'completed' === $state ) {
+				return true;
+			}
+			if ( 'failed' === $state ) {
+				$detail = isset( $status['error'] ) && is_string( $status['error'] ) && '' !== $status['error'] ? $status['error'] : __( 'unspecified error', 'blt-secure' );
+				return new WP_Error(
+					'blt_cf_list_failed',
+					sprintf(
+						/* translators: %s: Cloudflare's error text */
+						__( 'Cloudflare could not apply the IP list update: %s', 'blt-secure' ),
+						$detail
+					)
+				);
+			}
+			$this->api->pause( $i + 1 );
+		}
+		return 'pending';
+	}
+
+	/**
+	 * Delete the IOC block rule and, when this plugin created it, the account
+	 * IP List. 404 = already gone. An adopted list is left in place.
 	 *
 	 * @return true|WP_Error
 	 */
 	public function remove_ioc_list() {
+		$this->notes = array();
+
 		$zone   = $this->state->zone();
 		$record = $this->state->deployment( 'ioc' );
-		if ( null === $record ) {
+		if ( null === $record || empty( $zone['zone_id'] ) ) {
 			return true;
+		}
+		$guard = $this->guard_host( $zone );
+		if ( is_wp_error( $guard ) ) {
+			return $guard;
 		}
 
 		// Rule must go first — a list cannot be deleted while referenced.
-		$removed = $this->remove_rules( $zone, $record );
+		$removed = $this->remove_rules( $zone, 'ioc' );
 		if ( is_wp_error( $removed ) ) {
 			return $removed;
 		}
 
 		if ( ! empty( $record['list_id'] ) && ! empty( $zone['account_id'] ) ) {
-			$deleted = $this->api->delete( '/accounts/' . $zone['account_id'] . '/rules/lists/' . $record['list_id'] );
-			if ( is_wp_error( $deleted ) && ! $this->is_not_found( $deleted ) ) {
-				return $deleted;
+			if ( ! empty( $record['list_owned'] ) ) {
+				$deleted = $this->api->delete( '/accounts/' . Blt_Secure_Cloudflare_Api::seg( $zone['account_id'] ) . '/rules/lists/' . Blt_Secure_Cloudflare_Api::seg( $record['list_id'] ) );
+				if ( is_wp_error( $deleted ) && ! $this->is_not_found( $deleted ) ) {
+					return $deleted;
+				}
+			} else {
+				$this->notes[] = __( 'The Cloudflare IP list was adopted rather than created by this plugin, so it was left in place.', 'blt-secure' );
 			}
 		}
 
@@ -241,32 +470,52 @@ class Blt_Secure_Cloudflare_Deployer {
 	}
 
 	/**
-	 * Adopt the account IP List by name, or create it.
+	 * Adopt the account IP List (stored id, then host-scoped name) or create it.
+	 * A list created by this call carries a transient `__created` marker.
 	 *
 	 * @param string $account_id Account id.
+	 * @param string $name       List name.
+	 * @param array  $record     Previous IOC deployment record.
 	 * @return array|WP_Error List object.
 	 */
-	private function find_or_create_ioc_list( $account_id ) {
-		$lists = $this->api->get( '/accounts/' . $account_id . '/rules/lists' );
+	private function find_or_create_ioc_list( $account_id, $name, array $record ) {
+		$base = '/accounts/' . Blt_Secure_Cloudflare_Api::seg( $account_id ) . '/rules/lists';
+
+		if ( ! empty( $record['list_id'] ) ) {
+			$known = $this->api->get( $base . '/' . Blt_Secure_Cloudflare_Api::seg( $record['list_id'] ) );
+			if ( ! is_wp_error( $known ) && ! empty( $known['id'] ) ) {
+				return $known;
+			}
+			if ( is_wp_error( $known ) && in_array( $known->get_error_code(), array( 'blt_cf_auth', 'blt_cf_scope', 'blt_cf_rate_limited' ), true ) ) {
+				return $known;
+			}
+		}
+
+		$lists = $this->api->get( $base );
 		if ( ! is_wp_error( $lists ) ) {
 			foreach ( $lists as $list ) {
-				if ( isset( $list['name'], $list['id'] ) && Blt_Secure_Rule_Definitions::IOC_LIST_NAME === $list['name'] ) {
+				if ( isset( $list['name'], $list['id'] ) && $name === $list['name'] ) {
 					return $list;
 				}
 			}
-		} elseif ( in_array( $lists->get_error_code(), array( 'blt_cf_auth', 'blt_cf_scope' ), true ) ) {
+		} elseif ( in_array( $lists->get_error_code(), array( 'blt_cf_auth', 'blt_cf_scope', 'blt_cf_rate_limited' ), true ) ) {
 			// Missing Account Filter Lists permission must surface, not create.
 			return $lists;
 		}
 
-		return $this->api->post(
-			'/accounts/' . $account_id . '/rules/lists',
+		$created = $this->api->post(
+			$base,
 			array(
-				'name'        => Blt_Secure_Rule_Definitions::IOC_LIST_NAME,
+				'name'        => $name,
 				'kind'        => 'ip',
 				'description' => '[BLT Secure] Synced threat-intel indicators',
 			)
 		);
+		if ( is_wp_error( $created ) ) {
+			return $created;
+		}
+		$created['__created'] = true;
+		return $created;
 	}
 
 	// -------------------------------------------------------------------
@@ -274,27 +523,47 @@ class Blt_Secure_Cloudflare_Deployer {
 	// -------------------------------------------------------------------
 
 	/**
-	 * Deploy managed rulesets, degrading to the free ruleset when the plan
-	 * refuses the paid ones.
+	 * Deploy managed rulesets. The tier comes from the zone's KNOWN plan, never
+	 * from an error: Pro and above get the Cloudflare Managed + OWASP rulesets,
+	 * everything else the Free Managed Ruleset. The other tier's rules are
+	 * retired after a successful deploy so a plan change never leaves an
+	 * untracked rule behind.
 	 *
-	 * @param array $zone Zone identity.
-	 * @param array $config paranoia / score_threshold.
+	 * @see https://developers.cloudflare.com/waf/managed-rules/
+	 *
+	 * @param array  $zone Zone identity.
+	 * @param array  $config paranoia / score_threshold.
+	 * @param string $plan Normalized plan.
 	 * @return array|WP_Error
 	 */
-	private function deploy_waf_managed( array $zone, array $config ) {
+	private function deploy_waf_managed( array $zone, array $config, $plan ) {
 		$paranoia  = isset( $config['paranoia'] ) ? (int) $config['paranoia'] : 2;
 		$threshold = isset( $config['score_threshold'] ) ? (int) $config['score_threshold'] : 40;
-
-		$rules  = Blt_Secure_Rule_Definitions::managed_waf_rules( $paranoia, $threshold );
-		$result = $this->deploy_ruleset_feature( $zone, 'waf_managed', Blt_Secure_Rule_Definitions::PHASE_MANAGED, $rules, array( 'tier' => 'full' ) );
-
-		if ( is_wp_error( $result ) && in_array( $result->get_error_code(), array( 'blt_cf_plan', 'blt_cf_validation' ), true ) ) {
-			// Free-plan fallback.
-			$free = Blt_Secure_Rule_Definitions::managed_waf_rules_free();
-			return $this->deploy_ruleset_feature( $zone, 'waf_managed', Blt_Secure_Rule_Definitions::PHASE_MANAGED, $free, array( 'tier' => 'free' ) );
+		if ( ! in_array( $threshold, array( 25, 40, 60 ), true ) ) {
+			$threshold = 40;
 		}
 
-		return $result;
+		if ( in_array( $plan, array( 'pro', 'business', 'enterprise' ), true ) ) {
+			return $this->deploy_ruleset_feature(
+				$zone,
+				'waf_managed',
+				Blt_Secure_Rule_Definitions::PHASE_MANAGED,
+				Blt_Secure_Rule_Definitions::managed_waf_rules( $paranoia, $threshold ),
+				array( 'tier' => 'full' ),
+				$plan,
+				array( 'blt-secure-waf-free' )
+			);
+		}
+
+		return $this->deploy_ruleset_feature(
+			$zone,
+			'waf_managed',
+			Blt_Secure_Rule_Definitions::PHASE_MANAGED,
+			Blt_Secure_Rule_Definitions::managed_waf_rules_free(),
+			array( 'tier' => 'free' ),
+			$plan,
+			array( 'blt-secure-waf-managed', 'blt-secure-waf-owasp' )
+		);
 	}
 
 	// -------------------------------------------------------------------
@@ -306,11 +575,12 @@ class Blt_Secure_Cloudflare_Deployer {
 	 * request can never deploy a rule with an always-false (or malformed)
 	 * expression.
 	 *
-	 * @param array $zone Zone identity.
-	 * @param array $config countries / login_only / login_slug.
+	 * @param array  $zone Zone identity.
+	 * @param array  $config countries / login_only / login_slug / base_path.
+	 * @param string $plan Normalized plan.
 	 * @return array|WP_Error
 	 */
-	private function deploy_country_block( array $zone, array $config ) {
+	private function deploy_country_block( array $zone, array $config, $plan ) {
 		$countries = isset( $config['countries'] ) ? Blt_Secure_Rule_Definitions::sanitize_country_codes( $config['countries'] ) : array();
 		if ( empty( $countries ) ) {
 			return new WP_Error( 'blt_cf_validation', __( 'Choose at least one country to block first.', 'blt-secure' ) );
@@ -318,41 +588,178 @@ class Blt_Secure_Cloudflare_Deployer {
 
 		$login_only = ! empty( $config['login_only'] );
 		$slug       = isset( $config['login_slug'] ) ? (string) $config['login_slug'] : '';
+		$base       = isset( $config['base_path'] ) ? (string) $config['base_path'] : '';
 
 		return $this->deploy_ruleset_feature(
 			$zone,
 			'country_block',
 			Blt_Secure_Rule_Definitions::PHASE_CUSTOM,
-			Blt_Secure_Rule_Definitions::country_block_rules( $countries, $login_only, $slug ),
+			Blt_Secure_Rule_Definitions::country_block_rules( $countries, $login_only, $slug, $base ),
 			array(
 				'countries'  => $countries,
 				'login_only' => $login_only,
-			)
+			),
+			$plan
 		);
 	}
 
 	// -------------------------------------------------------------------
-	// Ruleset-engine plumbing (shared by waf_managed / custom_pack / rate_limit).
+	// Ruleset-engine plumbing (shared by every rule-based feature).
 	// -------------------------------------------------------------------
+
+	/**
+	 * Read a phase entrypoint without creating it.
+	 *
+	 * @param string $zone_id Zone id.
+	 * @param string $phase Phase name.
+	 * @return array|null|WP_Error Ruleset, null when the phase has no entrypoint yet, WP_Error otherwise.
+	 */
+	private function get_entrypoint( $zone_id, $phase ) {
+		$entrypoint = $this->api->get( '/zones/' . Blt_Secure_Cloudflare_Api::seg( $zone_id ) . '/rulesets/phases/' . $phase . '/entrypoint' );
+
+		if ( ! is_wp_error( $entrypoint ) ) {
+			return ! empty( $entrypoint['id'] ) ? $entrypoint : null;
+		}
+
+		$missing = $this->is_not_found( $entrypoint ) || 1 === preg_match( '/could not find|not found|no such/i', $entrypoint->get_error_message() );
+		if ( $missing ) {
+			return null;
+		}
+
+		// Auth, scope, throttling and transport problems must surface, never
+		// trigger a create attempt.
+		return $entrypoint;
+	}
+
+	/**
+	 * Check the per-plan rule budget for a phase before anything is created.
+	 *
+	 * @see https://developers.cloudflare.com/waf/custom-rules/
+	 * @see https://developers.cloudflare.com/waf/rate-limiting-rules/#availability
+	 *
+	 * @param array    $zone Zone identity.
+	 * @param string   $phase Phase.
+	 * @param array    $rules Desired rules.
+	 * @param string   $plan Normalized plan.
+	 * @param string[] $retire_refs Refs that will be deleted by this deploy (free up budget).
+	 * @param array    $entrypoint Already-read entrypoint (skips the GET), or null.
+	 * @return true|WP_Error blt_cf_budget when the plan cannot hold the rules.
+	 */
+	private function preflight_budget( array $zone, $phase, array $rules, $plan, array $retire_refs = array(), $entrypoint = null ) {
+		$limit = 0;
+		$label = '';
+		if ( Blt_Secure_Rule_Definitions::PHASE_CUSTOM === $phase ) {
+			$limit = Blt_Secure_Rule_Definitions::custom_rule_limit( $plan );
+			$label = __( 'custom rules', 'blt-secure' );
+		} elseif ( Blt_Secure_Rule_Definitions::PHASE_RATELIMIT === $phase ) {
+			$limit = Blt_Secure_Rule_Definitions::ratelimit_rule_limit( $plan );
+			$label = __( 'rate limiting rules', 'blt-secure' );
+		}
+		if ( $limit < 1 ) {
+			return true; // Unknown plan or an unmetered phase.
+		}
+
+		if ( null === $entrypoint ) {
+			$entrypoint = $this->get_entrypoint( $zone['zone_id'], $phase );
+			if ( is_wp_error( $entrypoint ) ) {
+				return $entrypoint;
+			}
+		}
+
+		$existing = array();
+		$current  = 0;
+		if ( is_array( $entrypoint ) && ! empty( $entrypoint['rules'] ) && is_array( $entrypoint['rules'] ) ) {
+			$current = count( $entrypoint['rules'] );
+			foreach ( $entrypoint['rules'] as $rule ) {
+				if ( ! empty( $rule['ref'] ) ) {
+					$existing[ $rule['ref'] ] = true;
+				}
+			}
+		}
+
+		$needed = 0;
+		foreach ( $rules as $payload ) {
+			if ( ! isset( $existing[ $payload['ref'] ] ) ) {
+				++$needed;
+			}
+		}
+		$freed = 0;
+		foreach ( $retire_refs as $ref ) {
+			if ( isset( $existing[ $ref ] ) ) {
+				++$freed;
+			}
+		}
+
+		if ( $current + $needed - $freed > $limit ) {
+			return new WP_Error(
+				'blt_cf_budget',
+				sprintf(
+					/* translators: 1: plan name, 2: plan limit, 3: label (custom rules / rate limiting rules), 4: rules already in the zone, 5: rules this feature still needs */
+					__( 'Skipped: your Cloudflare %1$s plan allows %2$d %3$s per zone, this zone already has %4$d and this feature needs %5$d more. Remove a rule you do not need or upgrade the plan, then redeploy.', 'blt-secure' ),
+					'' !== $plan ? $plan : __( 'current', 'blt-secure' ),
+					$limit,
+					$label,
+					$current,
+					$needed
+				),
+				array( 'skipped' => true )
+			);
+		}
+
+		return true;
+	}
 
 	/**
 	 * Reconcile a set of desired rules into a phase entrypoint.
 	 *
-	 * @param array  $zone Zone identity.
-	 * @param string $feature Feature key for state.
-	 * @param string $phase Ruleset phase.
-	 * @param array  $rules Desired rules keyed by ref suffix.
-	 * @param array  $extra Extra fields to store in the record.
+	 * Progress is persisted after EVERY rule (flagged "partial" until the last
+	 * one lands), so a failure midway never leaves live rules the UI cannot see
+	 * or remove.
+	 *
+	 * @param array    $zone Zone identity.
+	 * @param string   $feature Feature key for state.
+	 * @param string   $phase Ruleset phase.
+	 * @param array    $rules Desired rules keyed by ref suffix.
+	 * @param array    $extra Extra fields to store in the record.
+	 * @param string   $plan Normalized plan (budget check).
+	 * @param string[] $retire_refs Own refs to delete once the deploy succeeded (tier change / folded rules).
 	 * @return array|WP_Error Deployment record.
 	 */
-	private function deploy_ruleset_feature( array $zone, $feature, $phase, array $rules, array $extra = array() ) {
-		$entrypoint = $this->ensure_entrypoint( $zone['zone_id'], $phase );
+	private function deploy_ruleset_feature( array $zone, $feature, $phase, array $rules, array $extra = array(), $plan = '', array $retire_refs = array() ) {
+		$zone_seg   = Blt_Secure_Cloudflare_Api::seg( $zone['zone_id'] );
+		$entrypoint = $this->get_entrypoint( $zone['zone_id'], $phase );
 		if ( is_wp_error( $entrypoint ) ) {
 			return $entrypoint;
 		}
 
-		$ruleset_id = $entrypoint['id'];
-		$existing   = array();
+		$budget = $this->preflight_budget( $zone, $phase, $rules, $plan, $retire_refs, null === $entrypoint ? array() : $entrypoint );
+		if ( is_wp_error( $budget ) ) {
+			return $budget;
+		}
+
+		if ( null === $entrypoint ) {
+			$entrypoint = $this->api->post(
+				'/zones/' . $zone_seg . '/rulesets',
+				array(
+					'name'        => 'default',
+					'kind'        => 'zone',
+					'phase'       => $phase,
+					'description' => '',
+					'rules'       => array(),
+				)
+			);
+			if ( is_wp_error( $entrypoint ) ) {
+				return $entrypoint;
+			}
+		}
+
+		$ruleset_id = isset( $entrypoint['id'] ) ? (string) $entrypoint['id'] : '';
+		if ( '' === $ruleset_id ) {
+			return new WP_Error( 'blt_cf_validation', __( 'Cloudflare did not return a ruleset id.', 'blt-secure' ) );
+		}
+		$ruleset_seg = Blt_Secure_Cloudflare_Api::seg( $ruleset_id );
+
+		$existing = array();
 		if ( ! empty( $entrypoint['rules'] ) && is_array( $entrypoint['rules'] ) ) {
 			foreach ( $entrypoint['rules'] as $rule ) {
 				if ( ! empty( $rule['ref'] ) && ! empty( $rule['id'] ) ) {
@@ -361,18 +768,25 @@ class Blt_Secure_Cloudflare_Deployer {
 			}
 		}
 
+		// Ids already known to exist at the edge (re-adopted by ref).
 		$rule_ids = array();
+		foreach ( $rules as $key => $payload ) {
+			if ( isset( $existing[ $payload['ref'] ] ) ) {
+				$rule_ids[ $key ] = $existing[ $payload['ref'] ];
+			}
+		}
+
 		foreach ( $rules as $key => $payload ) {
 			$ref = $payload['ref'];
 
 			if ( isset( $existing[ $ref ] ) ) {
 				$result = $this->api->patch(
-					'/zones/' . $zone['zone_id'] . '/rulesets/' . $ruleset_id . '/rules/' . $existing[ $ref ],
+					'/zones/' . $zone_seg . '/rulesets/' . $ruleset_seg . '/rules/' . Blt_Secure_Cloudflare_Api::seg( $existing[ $ref ] ),
 					$payload
 				);
 			} else {
 				$result = $this->api->post(
-					'/zones/' . $zone['zone_id'] . '/rulesets/' . $ruleset_id . '/rules',
+					'/zones/' . $zone_seg . '/rulesets/' . $ruleset_seg . '/rules',
 					$payload
 				);
 			}
@@ -383,6 +797,35 @@ class Blt_Secure_Cloudflare_Deployer {
 
 			// Rule mutation endpoints return the updated ruleset; find our rule.
 			$rule_ids[ $key ] = $this->find_rule_id_by_ref( $result, $ref, isset( $existing[ $ref ] ) ? $existing[ $ref ] : '' );
+
+			// Persist progress so an interrupted deploy stays visible/removable.
+			$this->state->set_deployment(
+				$feature,
+				array_merge(
+					$extra,
+					array(
+						'ruleset_id' => $ruleset_id,
+						'phase'      => $phase,
+						'rule_ids'   => $rule_ids,
+						'partial'    => true,
+					)
+				)
+			);
+		}
+
+		// Retire superseded own refs (other WAF tier, folded TOR rule).
+		foreach ( $retire_refs as $ref ) {
+			if ( 0 !== strpos( $ref, 'blt-secure-' ) || ! isset( $existing[ $ref ] ) ) {
+				continue;
+			}
+			$gone = $this->api->delete( '/zones/' . $zone_seg . '/rulesets/' . $ruleset_seg . '/rules/' . Blt_Secure_Cloudflare_Api::seg( $existing[ $ref ] ) );
+			if ( is_wp_error( $gone ) && ! $this->is_not_found( $gone ) ) {
+				$this->notes[] = sprintf(
+					/* translators: %s: rule ref */
+					__( 'Could not remove the superseded rule %s; remove it in the Cloudflare dashboard.', 'blt-secure' ),
+					$ref
+				);
+			}
 		}
 
 		$record = array_merge(
@@ -397,37 +840,6 @@ class Blt_Secure_Cloudflare_Deployer {
 		$this->state->set_deployment( $feature, $record );
 
 		return $record;
-	}
-
-	/**
-	 * Get the phase entrypoint ruleset (with rules), creating it if absent.
-	 *
-	 * @param string $zone_id Zone id.
-	 * @param string $phase Phase name.
-	 * @return array|WP_Error Ruleset object.
-	 */
-	private function ensure_entrypoint( $zone_id, $phase ) {
-		$entrypoint = $this->api->get( '/zones/' . $zone_id . '/rulesets/phases/' . $phase . '/entrypoint' );
-
-		if ( ! is_wp_error( $entrypoint ) && ! empty( $entrypoint['id'] ) ) {
-			return $entrypoint;
-		}
-
-		// Scope problems must surface, not trigger a create attempt.
-		if ( is_wp_error( $entrypoint ) && in_array( $entrypoint->get_error_code(), array( 'blt_cf_auth', 'blt_cf_scope' ), true ) ) {
-			return $entrypoint;
-		}
-
-		return $this->api->post(
-			'/zones/' . $zone_id . '/rulesets',
-			array(
-				'name'        => 'default',
-				'kind'        => 'zone',
-				'phase'       => $phase,
-				'description' => '',
-				'rules'       => array(),
-			)
-		);
 	}
 
 	/**
@@ -450,22 +862,38 @@ class Blt_Secure_Cloudflare_Deployer {
 	}
 
 	/**
-	 * Delete a feature's rules by stored id; 404 = already gone = success.
+	 * Delete a feature's rules BY REF: read the live entrypoint and delete only
+	 * rules whose ref is one of this feature's own "blt-secure-*" refs. Works
+	 * for orphans (no deployment record) and can never touch a foreign rule.
+	 * 404 = already gone = success.
 	 *
-	 * @param array $zone Zone identity.
-	 * @param array $record Deployment record.
+	 * @param array  $zone Zone identity.
+	 * @param string $feature Feature key (incl. 'ioc').
 	 * @return true|WP_Error
 	 */
-	private function remove_rules( array $zone, array $record ) {
-		if ( empty( $record['ruleset_id'] ) || empty( $record['rule_ids'] ) ) {
+	private function remove_rules( array $zone, $feature ) {
+		$def = Blt_Secure_Rule_Definitions::feature_refs( $feature );
+		if ( null === $def ) {
 			return true;
 		}
 
-		foreach ( (array) $record['rule_ids'] as $rule_id ) {
-			if ( '' === (string) $rule_id ) {
+		$entrypoint = $this->get_entrypoint( $zone['zone_id'], $def['phase'] );
+		if ( is_wp_error( $entrypoint ) ) {
+			return $entrypoint;
+		}
+		if ( null === $entrypoint || empty( $entrypoint['rules'] ) || ! is_array( $entrypoint['rules'] ) ) {
+			return true;
+		}
+
+		$zone_seg    = Blt_Secure_Cloudflare_Api::seg( $zone['zone_id'] );
+		$ruleset_seg = Blt_Secure_Cloudflare_Api::seg( $entrypoint['id'] );
+
+		foreach ( $entrypoint['rules'] as $rule ) {
+			$ref = isset( $rule['ref'] ) ? (string) $rule['ref'] : '';
+			if ( '' === $ref || empty( $rule['id'] ) || 0 !== strpos( $ref, 'blt-secure-' ) || ! in_array( $ref, $def['refs'], true ) ) {
 				continue;
 			}
-			$result = $this->api->delete( '/zones/' . $zone['zone_id'] . '/rulesets/' . $record['ruleset_id'] . '/rules/' . $rule_id );
+			$result = $this->api->delete( '/zones/' . $zone_seg . '/rulesets/' . $ruleset_seg . '/rules/' . Blt_Secure_Cloudflare_Api::seg( $rule['id'] ) );
 			if ( is_wp_error( $result ) && ! $this->is_not_found( $result ) ) {
 				return $result;
 			}
@@ -479,53 +907,79 @@ class Blt_Secure_Cloudflare_Deployer {
 	// -------------------------------------------------------------------
 
 	/**
-	 * Enable leaked-credential checks, add the WP-form detection, and the
-	 * companion challenge rule.
+	 * Enable leaked-credential checks and add the companion challenge rule.
+	 * Custom detection locations are Enterprise-only; every other plan relies
+	 * on Cloudflare's default detection (which already covers WordPress).
 	 *
-	 * @param array $zone Zone identity.
+	 * @see https://developers.cloudflare.com/waf/detections/leaked-credentials/
+	 *
+	 * @param array  $zone Zone identity.
+	 * @param string $plan Normalized plan.
 	 * @return array|WP_Error
 	 */
-	private function deploy_leaked_creds( array $zone ) {
-		$enable = $this->api->post( '/zones/' . $zone['zone_id'] . '/leaked-credential-checks', array( 'enabled' => true ) );
+	private function deploy_leaked_creds( array $zone, $plan ) {
+		$zone_seg = Blt_Secure_Cloudflare_Api::seg( $zone['zone_id'] );
+		$rules    = Blt_Secure_Rule_Definitions::leaked_creds_rules( $plan );
+
+		// Budget first: nothing is enabled or created when the rule cannot fit.
+		$budget = $this->preflight_budget( $zone, Blt_Secure_Rule_Definitions::PHASE_CUSTOM, $rules, $plan );
+		if ( is_wp_error( $budget ) ) {
+			return $budget;
+		}
+
+		$enable = $this->api->post( '/zones/' . $zone_seg . '/leaked-credential-checks', array( 'enabled' => true ) );
 		if ( is_wp_error( $enable ) ) {
 			return $enable;
 		}
 
-		// Custom detection for wp-login.php form fields. Duplicate
-		// detections error; reuse an existing identical one.
-		$detection_id = '';
-		$desired      = Blt_Secure_Rule_Definitions::leaked_creds_detection();
-		$existing     = $this->api->get( '/zones/' . $zone['zone_id'] . '/leaked-credential-checks/detections' );
-		if ( ! is_wp_error( $existing ) ) {
-			foreach ( $existing as $detection ) {
-				if ( isset( $detection['username'], $detection['password'] )
-					&& $detection['username'] === $desired['username']
-					&& $detection['password'] === $desired['password'] ) {
-					$detection_id = isset( $detection['id'] ) ? $detection['id'] : '';
-					break;
+		$extra = array( 'plan_tier' => 'enterprise' === $plan ? 'custom' : 'default' );
+
+		if ( 'enterprise' === $plan ) {
+			$desired      = Blt_Secure_Rule_Definitions::leaked_creds_detection();
+			$detection_id = '';
+			$created_now  = false;
+
+			$existing = $this->api->get( '/zones/' . $zone_seg . '/leaked-credential-checks/detections' );
+			if ( ! is_wp_error( $existing ) ) {
+				foreach ( $existing as $detection ) {
+					if ( isset( $detection['username'], $detection['password'] )
+						&& $detection['username'] === $desired['username']
+						&& $detection['password'] === $desired['password'] ) {
+						$detection_id = isset( $detection['id'] ) ? (string) $detection['id'] : '';
+						break;
+					}
 				}
 			}
-		}
-		if ( '' === $detection_id ) {
-			$created = $this->api->post( '/zones/' . $zone['zone_id'] . '/leaked-credential-checks/detections', $desired );
-			if ( is_wp_error( $created ) ) {
-				return $created;
+			if ( '' === $detection_id ) {
+				$created = $this->api->post( '/zones/' . $zone_seg . '/leaked-credential-checks/detections', $desired );
+				if ( is_wp_error( $created ) ) {
+					return $created;
+				}
+				$detection_id = isset( $created['id'] ) ? (string) $created['id'] : '';
+				$created_now  = '' !== $detection_id;
 			}
-			$detection_id = isset( $created['id'] ) ? $created['id'] : '';
+
+			$previous = $this->state->deployment( 'leaked_creds' );
+			$owned    = $created_now || ( is_array( $previous ) && ! empty( $previous['detection_owned'] ) && isset( $previous['detection_id'] ) && (string) $previous['detection_id'] === $detection_id );
+
+			$extra['detection_id']    = $detection_id;
+			$extra['detection_owned'] = (bool) $owned;
+
+			$result = $this->deploy_ruleset_feature( $zone, 'leaked_creds', Blt_Secure_Rule_Definitions::PHASE_CUSTOM, $rules, $extra, $plan );
+			if ( is_wp_error( $result ) && $created_now && '' !== $detection_id ) {
+				// Roll back what this run created.
+				$this->api->delete( '/zones/' . $zone_seg . '/leaked-credential-checks/detections/' . Blt_Secure_Cloudflare_Api::seg( $detection_id ) );
+			}
+			return $result;
 		}
 
-		// Companion challenge rule lives in the custom phase.
-		$rules_result = $this->deploy_ruleset_feature( $zone, 'leaked_creds', Blt_Secure_Rule_Definitions::PHASE_CUSTOM, Blt_Secure_Rule_Definitions::leaked_creds_rules(), array( 'detection_id' => $detection_id ) );
-		if ( is_wp_error( $rules_result ) ) {
-			return $rules_result;
-		}
-
-		return $rules_result;
+		return $this->deploy_ruleset_feature( $zone, 'leaked_creds', Blt_Secure_Rule_Definitions::PHASE_CUSTOM, $rules, $extra, $plan );
 	}
 
 	/**
-	 * Remove the leaked-creds detection + rule (leaves the zone-level
-	 * enabled flag on — it is harmless and may predate us).
+	 * Remove the leaked-creds rule (by ref) and, only when this plugin created
+	 * it, the custom detection. The zone-level enabled flag stays on — it is
+	 * harmless and may predate us.
 	 *
 	 * @param array $zone Zone identity.
 	 * @param array $record Deployment record.
@@ -533,13 +987,17 @@ class Blt_Secure_Cloudflare_Deployer {
 	 */
 	private function remove_leaked_creds( array $zone, array $record ) {
 		if ( ! empty( $record['detection_id'] ) ) {
-			$result = $this->api->delete( '/zones/' . $zone['zone_id'] . '/leaked-credential-checks/detections/' . $record['detection_id'] );
-			if ( is_wp_error( $result ) && ! $this->is_not_found( $result ) ) {
-				return $result;
+			if ( ! empty( $record['detection_owned'] ) ) {
+				$result = $this->api->delete( '/zones/' . Blt_Secure_Cloudflare_Api::seg( $zone['zone_id'] ) . '/leaked-credential-checks/detections/' . Blt_Secure_Cloudflare_Api::seg( $record['detection_id'] ) );
+				if ( is_wp_error( $result ) && ! $this->is_not_found( $result ) ) {
+					return $result;
+				}
+			} else {
+				$this->notes[] = __( 'The leaked-credential detection was adopted rather than created by this plugin, so it was left in place.', 'blt-secure' );
 			}
 		}
 
-		return $this->remove_rules( $zone, $record );
+		return $this->remove_rules( $zone, 'leaked_creds' );
 	}
 
 	// -------------------------------------------------------------------
@@ -547,7 +1005,7 @@ class Blt_Secure_Cloudflare_Deployer {
 	// -------------------------------------------------------------------
 
 	/**
-	 * Probe whether the token can manage Access apps at all.
+	 * Probe whether the token can manage Access apps at all (read-only).
 	 *
 	 * @return true|WP_Error
 	 */
@@ -556,15 +1014,19 @@ class Blt_Secure_Cloudflare_Deployer {
 		if ( empty( $zone['account_id'] ) ) {
 			return new WP_Error( 'blt_cf_not_connected', __( 'Cloudflare is not connected yet.', 'blt-secure' ) );
 		}
-		$result = $this->api->get( '/accounts/' . $zone['account_id'] . '/access/apps' );
+		$result = $this->api->get( '/accounts/' . Blt_Secure_Cloudflare_Api::seg( $zone['account_id'] ) . '/access/apps', array( 'per_page' => 1 ) );
 		return is_wp_error( $result ) ? $result : true;
 	}
 
 	/**
-	 * Create the Access app + allow policy + admin-ajax bypass app.
+	 * Create/update the Access apps. Each app is created WITH its policy in
+	 * one request (an Access app without a policy denies everyone, so there is
+	 * never a window where wp-admin is locked), the admin-ajax bypass app goes
+	 * first, and anything this run created is rolled back if a later step
+	 * fails. The scope is probed before anything is touched.
 	 *
 	 * @param array $zone Zone identity.
-	 * @param array $config emails / login_slug.
+	 * @param array $config emails / login_slug / base_path.
 	 * @return array|WP_Error
 	 */
 	private function deploy_access( array $zone, array $config ) {
@@ -572,111 +1034,211 @@ class Blt_Secure_Cloudflare_Deployer {
 			return new WP_Error( 'blt_cf_not_connected', __( 'No Cloudflare account id is known for this zone.', 'blt-secure' ) );
 		}
 
-		$emails = isset( $config['emails'] ) && is_array( $config['emails'] ) ? array_filter( array_map( 'sanitize_email', $config['emails'] ) ) : array();
+		$emails = isset( $config['emails'] ) && is_array( $config['emails'] ) ? array_values( array_filter( array_map( 'sanitize_email', $config['emails'] ) ) ) : array();
 		if ( empty( $emails ) ) {
 			return new WP_Error( 'blt_cf_validation', __( 'At least one administrator email is required for the Access policy.', 'blt-secure' ) );
 		}
+		sort( $emails );
 
-		$host = $zone['host'];
+		$host = isset( $zone['host'] ) ? (string) $zone['host'] : '';
+		if ( '' === $host ) {
+			return new WP_Error( 'blt_cf_validation', __( 'The site host is unknown; reconnect the Cloudflare token first.', 'blt-secure' ) );
+		}
 		$slug = isset( $config['login_slug'] ) ? (string) $config['login_slug'] : '';
-		$base = '/accounts/' . $zone['account_id'] . '/access/apps';
+		$base = Blt_Secure_Rule_Definitions::normalize_base_path( isset( $config['base_path'] ) ? $config['base_path'] : '' );
+
+		// Scope/entitlement preflight: fail BEFORE anything is created.
+		$probe = $this->probe_access();
+		if ( is_wp_error( $probe ) ) {
+			return $probe;
+		}
+
+		$apps_url = '/accounts/' . Blt_Secure_Cloudflare_Api::seg( $zone['account_id'] ) . '/access/apps';
+		$apps     = $this->api->get_all( $apps_url );
+		if ( is_wp_error( $apps ) ) {
+			return $apps; // Cannot tell what exists; creating blind would duplicate.
+		}
+
+		$previous = $this->state->deployment( 'access' );
+		$previous = is_array( $previous ) ? $previous : array();
+		$hash     = Blt_Secure_Rule_Definitions::access_config_hash( $host, $slug, $emails, $base );
+		$changed  = ! isset( $previous['config_hash'] ) || $previous['config_hash'] !== $hash;
 
 		$record = array(
-			'app_id'        => '',
-			'bypass_app_id' => '',
-			'policy_ids'    => array(),
+			'app_id'           => '',
+			'bypass_app_id'    => '',
+			'app_owned'        => false,
+			'bypass_app_owned' => false,
+			'policy_ids'       => array(),
+			'host'             => $host,
+			'partial'          => true,
 		);
 
-		// Bypass app FIRST — the moment the main app exists, admin-ajax is
-		// gated; creating the bypass first avoids a broken window.
-		$bypass_app = $this->find_or_create_app( $base, Blt_Secure_Rule_Definitions::access_bypass_app( $host ) );
-		if ( is_wp_error( $bypass_app ) ) {
-			return $bypass_app;
+		// Bypass app FIRST — the moment the main app exists, admin-ajax is gated.
+		$bypass = $this->upsert_app(
+			$apps_url,
+			$apps,
+			Blt_Secure_Rule_Definitions::access_bypass_app( $host, $base ),
+			isset( $previous['bypass_app_id'] ) ? (string) $previous['bypass_app_id'] : '',
+			! empty( $previous['bypass_app_owned'] ),
+			$changed
+		);
+		if ( is_wp_error( $bypass ) ) {
+			return $bypass;
 		}
-		$record['bypass_app_id'] = $bypass_app['id'];
+		$record['bypass_app_id']    = $bypass['id'];
+		$record['bypass_app_owned'] = $bypass['owned'];
+		$record['policy_ids']       = array_merge( $record['policy_ids'], $bypass['policy_ids'] );
+		$this->state->set_deployment( 'access', $record );
 
-		foreach ( Blt_Secure_Rule_Definitions::access_bypass_policies() as $policy ) {
-			$created = $this->find_or_create_policy( $base . '/' . $bypass_app['id'] . '/policies', $policy );
-			if ( is_wp_error( $created ) ) {
-				return $created;
+		$main = $this->upsert_app(
+			$apps_url,
+			$apps,
+			Blt_Secure_Rule_Definitions::access_app( $host, $slug, $emails, $base ),
+			isset( $previous['app_id'] ) ? (string) $previous['app_id'] : '',
+			! empty( $previous['app_owned'] ),
+			$changed
+		);
+		if ( is_wp_error( $main ) ) {
+			// Roll back what this run created (a pre-existing app is untouched).
+			if ( $bypass['created'] ) {
+				$this->api->delete( $apps_url . '/' . Blt_Secure_Cloudflare_Api::seg( $bypass['id'] ) );
+				if ( empty( $previous ) ) {
+					$this->state->clear_deployment( 'access' );
+				} else {
+					$this->state->set_deployment( 'access', $previous );
+				}
 			}
-			$record['policy_ids'][] = $created['id'];
+			return $main;
 		}
+		$record['app_id']     = $main['id'];
+		$record['app_owned']  = $main['owned'];
+		$record['policy_ids'] = array_merge( $record['policy_ids'], $main['policy_ids'] );
 
-		$app = $this->find_or_create_app( $base, Blt_Secure_Rule_Definitions::access_app( $host, $slug ) );
-		if ( is_wp_error( $app ) ) {
-			return $app;
-		}
-		$record['app_id'] = $app['id'];
-
-		foreach ( Blt_Secure_Rule_Definitions::access_policies( $emails ) as $policy ) {
-			$created = $this->find_or_create_policy( $base . '/' . $app['id'] . '/policies', $policy );
-			if ( is_wp_error( $created ) ) {
-				return $created;
-			}
-			$record['policy_ids'][] = $created['id'];
-		}
-
-		$record['config_hash'] = Blt_Secure_Rule_Definitions::config_hash( array( $emails, $slug, $host ) );
+		unset( $record['partial'] );
+		$record['config_hash'] = $hash;
 		$this->state->set_deployment( 'access', $record );
 
 		return $record;
 	}
 
 	/**
-	 * Adopt an existing app by name or create it.
+	 * Adopt-and-update, or create, one Access application (with its inline
+	 * policy). An existing app is matched by its host-scoped name, or by the id
+	 * this site stored earlier (migrating an older shared-name app). It is only
+	 * rewritten when the desired config changed.
 	 *
-	 * @param string $base Apps endpoint.
-	 * @param array  $payload App payload.
-	 * @return array|WP_Error App object.
+	 * @param string $apps_url   Apps endpoint.
+	 * @param array  $apps       Existing apps.
+	 * @param array  $payload    Desired app (incl. inline policies).
+	 * @param string $stored_id  App id stored by this site, or ''.
+	 * @param bool   $stored_owned Whether this plugin created that stored app.
+	 * @param bool   $changed    Whether the desired config differs from what was deployed.
+	 * @return array|WP_Error {id, owned, created, policy_ids}
 	 */
-	private function find_or_create_app( $base, array $payload ) {
-		$apps = $this->api->get( $base );
-		if ( ! is_wp_error( $apps ) ) {
+	private function upsert_app( $apps_url, array $apps, array $payload, $stored_id, $stored_owned, $changed ) {
+		$found = null;
+		foreach ( $apps as $app ) {
+			if ( isset( $app['name'], $app['id'] ) && $app['name'] === $payload['name'] ) {
+				$found = $app;
+				break;
+			}
+		}
+		if ( null === $found && '' !== $stored_id ) {
 			foreach ( $apps as $app ) {
-				if ( isset( $app['name'], $app['id'] ) && $app['name'] === $payload['name'] ) {
-					return $app;
+				if ( isset( $app['id'] ) && (string) $app['id'] === $stored_id ) {
+					$found = $app;
+					break;
 				}
 			}
 		}
-		return $this->api->post( $base, $payload );
+
+		if ( null !== $found ) {
+			$id    = (string) $found['id'];
+			$owned = $stored_owned && $stored_id === $id;
+			$ids   = self::policy_ids( $found );
+
+			if ( $changed || ( isset( $found['name'] ) && $found['name'] !== $payload['name'] ) ) {
+				$updated = $this->api->put( $apps_url . '/' . Blt_Secure_Cloudflare_Api::seg( $id ), $payload );
+				if ( is_wp_error( $updated ) ) {
+					return $updated;
+				}
+				$ids = array_merge( $ids, self::policy_ids( $updated ) );
+			}
+
+			return array(
+				'id'         => $id,
+				'owned'      => $owned,
+				'created'    => false,
+				'policy_ids' => array_values( array_unique( $ids ) ),
+			);
+		}
+
+		$created = $this->api->post( $apps_url, $payload );
+		if ( is_wp_error( $created ) ) {
+			return $created;
+		}
+		if ( empty( $created['id'] ) ) {
+			return new WP_Error( 'blt_cf_validation', __( 'Cloudflare did not return an Access application id.', 'blt-secure' ) );
+		}
+
+		return array(
+			'id'         => (string) $created['id'],
+			'owned'      => true,
+			'created'    => true,
+			'policy_ids' => self::policy_ids( $created ),
+		);
 	}
 
 	/**
-	 * Adopt an existing policy by name or create it.
+	 * Policy ids carried by an app object (inline policy objects or id strings).
 	 *
-	 * @param string $base Policies endpoint.
-	 * @param array  $payload Policy payload.
-	 * @return array|WP_Error Policy object.
+	 * @param array $app App object.
+	 * @return string[]
 	 */
-	private function find_or_create_policy( $base, array $payload ) {
-		$policies = $this->api->get( $base );
-		if ( ! is_wp_error( $policies ) ) {
-			foreach ( $policies as $policy ) {
-				if ( isset( $policy['name'], $policy['id'] ) && $policy['name'] === $payload['name'] ) {
-					return $policy;
+	private static function policy_ids( array $app ) {
+		$ids = array();
+		if ( ! empty( $app['policies'] ) && is_array( $app['policies'] ) ) {
+			foreach ( $app['policies'] as $policy ) {
+				if ( is_array( $policy ) && ! empty( $policy['id'] ) ) {
+					$ids[] = (string) $policy['id'];
+				} elseif ( is_string( $policy ) && '' !== $policy ) {
+					$ids[] = $policy;
 				}
 			}
 		}
-		return $this->api->post( $base, $payload );
+		return $ids;
 	}
 
 	/**
-	 * Delete Access apps (policies cascade with the app).
+	 * Delete the Access apps this plugin created (policies go with the app).
+	 * Apps it merely adopted are left in place and reported.
 	 *
 	 * @param array $zone Zone identity.
 	 * @param array $record Deployment record.
 	 * @return true|WP_Error
 	 */
 	private function remove_access( array $zone, array $record ) {
-		$base = '/accounts/' . $zone['account_id'] . '/access/apps';
+		if ( empty( $zone['account_id'] ) ) {
+			return true;
+		}
+		$base = '/accounts/' . Blt_Secure_Cloudflare_Api::seg( $zone['account_id'] ) . '/access/apps';
 
-		foreach ( array( 'app_id', 'bypass_app_id' ) as $key ) {
-			if ( ! empty( $record[ $key ] ) ) {
-				$result = $this->api->delete( $base . '/' . $record[ $key ] );
-				if ( is_wp_error( $result ) && ! $this->is_not_found( $result ) ) {
-					return $result;
-				}
+		$targets = array(
+			'app_id'        => 'app_owned',
+			'bypass_app_id' => 'bypass_app_owned',
+		);
+		foreach ( $targets as $id_key => $owned_key ) {
+			if ( empty( $record[ $id_key ] ) ) {
+				continue;
+			}
+			if ( empty( $record[ $owned_key ] ) ) {
+				$this->notes[] = __( 'An Access application was adopted (or created by an older version) rather than created by this plugin, so it was left in place — delete it in Cloudflare Zero Trust if you no longer want it.', 'blt-secure' );
+				continue;
+			}
+			$result = $this->api->delete( $base . '/' . Blt_Secure_Cloudflare_Api::seg( $record[ $id_key ] ) );
+			if ( is_wp_error( $result ) && ! $this->is_not_found( $result ) ) {
+				return $result;
 			}
 		}
 

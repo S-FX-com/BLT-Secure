@@ -261,6 +261,8 @@ class Blt_Secure_Admin {
 					'deployAllDone' => __( 'All protections deployed.', 'blt-secure' ),
 					/* translators: %s: number of failed cards */
 					'deployAllFail' => __( '%s card(s) failed — see the message on each card.', 'blt-secure' ),
+					/* translators: %s: number of skipped cards */
+					'deployAllSkip' => __( 'Deployed what fits your plan; %s card(s) were skipped — see the reason on each card.', 'blt-secure' ),
 				),
 			)
 		);
@@ -371,30 +373,38 @@ class Blt_Secure_Admin {
 	 * @return array[]
 	 */
 	public function cf_cards() {
+		$zone = $this->cf_state->zone();
+		$plan = Blt_Secure_Rule_Definitions::normalize_plan( isset( $zone['plan'] ) ? $zone['plan'] : '' );
+		$paid = in_array( $plan, array( 'pro', 'business', 'enterprise' ), true );
+
 		return array(
 			'waf_managed'   => array(
 				'title' => __( 'Managed WAF rules', 'blt-secure' ),
-				'desc'  => __( 'Cloudflare Managed Ruleset with the WordPress category emphasized, plus the OWASP Core Ruleset at paranoia level 2. Free-plan zones automatically get the Free Managed Ruleset instead.', 'blt-secure' ),
+				'desc'  => __( 'Cloudflare Managed Ruleset with the WordPress category emphasized, plus the OWASP Core Ruleset at paranoia level 2 (Pro plan or higher). Free-plan zones get the Free Managed Ruleset instead; the tier is chosen from your zone\'s plan.', 'blt-secure' ),
 			),
 			'custom_pack'   => array(
 				'title' => __( 'Custom rules pack', 'blt-secure' ),
-				'desc'  => __( 'Challenge high-abuse hosting ASNs and TOR exits; block wp-config / .env / .git probes outright.', 'blt-secure' ),
+				'desc'  => __( 'Challenge high-abuse hosting ASNs and TOR exits (REST API, WP-Cron and XML-RPC are exempt so webhooks and loopbacks keep working); block wp-config / .env / .git probes outright. Uses 2 of your custom rules.', 'blt-secure' ),
 			),
 			'country_block' => array(
 				'title' => __( 'Country blocking', 'blt-secure' ),
-				'desc'  => __( 'Block traffic from the countries you list, enforced at the Cloudflare edge before it reaches your server. Use the login-only mode to keep the site readable worldwide while stopping sign-ins — and be careful with full-site blocking if you rely on crawlers or customers from those regions.', 'blt-secure' ),
+				'desc'  => __( 'Block traffic from the countries you list, enforced at the Cloudflare edge before it reaches your server. Use the login-only mode to keep the site readable worldwide while stopping sign-ins — and be careful with full-site blocking if you rely on crawlers or customers from those regions. Uses 1 custom rule.', 'blt-secure' ),
 			),
 			'rate_limit'    => array(
 				'title' => __( 'Login rate limiting', 'blt-secure' ),
-				'desc'  => __( '5 requests per minute per IP on wp-login.php, xmlrpc.php, and your custom login slug; violators blocked for 10 minutes at the edge.', 'blt-secure' ),
+				'desc'  => $paid
+					? __( '5 requests per minute per IP on wp-login.php, xmlrpc.php, and your custom login slug; violators blocked for 10 minutes at the edge.', 'blt-secure' )
+					: __( 'Free-plan limits apply: 5 requests per 10 seconds per IP on wp-login.php, xmlrpc.php, and your custom login slug; violators blocked for 10 seconds at the edge (Cloudflare Free only allows 10-second windows). Pro and higher get 5 per minute with a 10-minute block.', 'blt-secure' ),
 			),
 			'leaked_creds'  => array(
 				'title' => __( 'Leaked-credential check', 'blt-secure' ),
-				'desc'  => __( 'Detects logins using breached username/password pairs on the WordPress login form and challenges them before they reach PHP.', 'blt-secure' ),
+				'desc'  => $paid
+					? __( 'Cloudflare\'s default leaked-credential detection (it already understands the WordPress login form) challenges logins whose username/password pair appears in a breach. Enterprise zones also get a custom detection on the log/pwd fields. Uses 1 custom rule.', 'blt-secure' )
+					: __( 'Free plans check the password only (the username-and-password check needs Pro or higher, custom form detection needs Enterprise); matching logins get a challenge before they reach PHP. Uses 1 custom rule.', 'blt-secure' ),
 			),
 			'access'        => array(
 				'title' => __( 'Cloudflare Access (Zero Trust)', 'blt-secure' ),
-				'desc'  => __( 'Puts wp-admin and your login URL behind Cloudflare Access with an email allow-list. An admin-ajax.php bypass is created automatically so front-end features keep working. Requires the token to also carry Account → Access: Apps and Policies: Edit.', 'blt-secure' ),
+				'desc'  => __( 'Puts wp-admin and your login URL behind Cloudflare Access with an email allow-list (the site admin email). An admin-ajax.php / admin-post.php bypass is created automatically so front-end features keep working. Requires the token to also carry Account → Access: Apps and Policies: Edit; the scope is checked before anything is created.', 'blt-secure' ),
 			),
 		);
 	}
@@ -425,7 +435,16 @@ class Blt_Secure_Admin {
 		if ( '' === $token ) {
 			return new WP_Error( 'blt_cf_no_token', __( 'No Cloudflare token is configured.', 'blt-secure' ) );
 		}
-		return new Blt_Secure_Cloudflare_Deployer( new Blt_Secure_Cloudflare_Api( $token ), $this->cf_state );
+		return new Blt_Secure_Cloudflare_Deployer( new Blt_Secure_Cloudflare_Api( $token ), $this->cf_state, $this->site_host() );
+	}
+
+	/**
+	 * This site's host, for the zone-drift guard.
+	 *
+	 * @return string
+	 */
+	private function site_host() {
+		return strtolower( (string) wp_parse_url( home_url(), PHP_URL_HOST ) );
 	}
 
 	/**
@@ -447,16 +466,19 @@ class Blt_Secure_Admin {
 
 		$deployer = new Blt_Secure_Cloudflare_Deployer( new Blt_Secure_Cloudflare_Api( $token ), $this->cf_state );
 		$host     = (string) wp_parse_url( home_url(), PHP_URL_HOST );
-		$zone     = $deployer->connect( $host );
+		$zone     = $deployer->connect( $host, false ); // Verify + discover only; nothing is persisted yet.
 
 		if ( is_wp_error( $zone ) ) {
 			wp_send_json_error( array( 'message' => $zone->get_error_message() ) );
 		}
 
+		// Store the token FIRST so a failed write never leaves a zone identity
+		// (and Deploy buttons) without a token behind it.
 		$stored = $this->plugin->credentials->set( 'cf_token', $token );
 		if ( is_wp_error( $stored ) ) {
 			wp_send_json_error( array( 'message' => $stored->get_error_message() ) );
 		}
+		$this->cf_state->set_zone( $zone );
 
 		wp_send_json_success(
 			array(
@@ -505,14 +527,16 @@ class Blt_Secure_Admin {
 
 		$config = array(
 			'login_slug' => (string) $this->plugin->options->get( 'login', 'slug', '' ),
+			'base_path'  => (string) wp_parse_url( home_url(), PHP_URL_PATH ),
 			'emails'     => array( get_option( 'admin_email' ) ),
 		);
 		// phpcs:disable WordPress.Security.NonceVerification.Missing -- guard() ran check_ajax_referer.
 		if ( isset( $_POST['paranoia'] ) ) {
-			$config['paranoia'] = absint( wp_unslash( $_POST['paranoia'] ) );
+			$config['paranoia'] = max( 1, min( 4, absint( wp_unslash( $_POST['paranoia'] ) ) ) );
 		}
 		if ( isset( $_POST['score_threshold'] ) ) {
-			$config['score_threshold'] = absint( wp_unslash( $_POST['score_threshold'] ) );
+			$threshold                 = absint( wp_unslash( $_POST['score_threshold'] ) );
+			$config['score_threshold'] = in_array( $threshold, array( 25, 40, 60 ), true ) ? $threshold : 40;
 		}
 		if ( isset( $_POST['countries'] ) ) {
 			$config['countries'] = Blt_Secure_Rule_Definitions::sanitize_country_codes(
@@ -536,12 +560,19 @@ class Blt_Secure_Admin {
 			if ( 'blt_cf_scope' === $result->get_error_code() ) {
 				$hint = ' ' . __( 'Your token is missing a permission — edit it at dash.cloudflare.com → My Profile → API Tokens and add the permission named in the card description, then retry.', 'blt-secure' );
 			}
-			wp_send_json_error( array( 'message' => $result->get_error_message() . $hint ) );
+			// A budget refusal is a deliberate skip (nothing was changed), which
+			// "Deploy all" reports separately from a failure.
+			wp_send_json_error(
+				array(
+					'message' => $result->get_error_message() . $hint,
+					'skipped' => 'blt_cf_budget' === $result->get_error_code(),
+				)
+			);
 		}
 
 		wp_send_json_success(
 			array(
-				'message' => __( 'Deployed.', 'blt-secure' ),
+				'message' => trim( __( 'Deployed.', 'blt-secure' ) . ' ' . implode( ' ', $deployer->notes() ) ),
 				'record'  => $result,
 			)
 		);
@@ -805,6 +836,6 @@ class Blt_Secure_Admin {
 			wp_send_json_error( array( 'message' => $result->get_error_message() ) );
 		}
 
-		wp_send_json_success( array( 'message' => __( 'Removed.', 'blt-secure' ) ) );
+		wp_send_json_success( array( 'message' => trim( __( 'Removed.', 'blt-secure' ) . ' ' . implode( ' ', $deployer->notes() ) ) ) );
 	}
 }

@@ -17,6 +17,20 @@ if ( ! defined( 'ABSPATH' ) ) {
 $blt_secure_zone      = $cf_state->zone();
 $blt_secure_has_token = '' !== Blt_Secure_Cloudflare_Api::resolve_token( $store );
 $blt_secure_connected = $blt_secure_has_token && ! empty( $blt_secure_zone['zone_id'] );
+$blt_secure_plan      = Blt_Secure_Rule_Definitions::normalize_plan( isset( $blt_secure_zone['plan'] ) ? $blt_secure_zone['plan'] : '' );
+$blt_secure_base      = (string) wp_parse_url( home_url(), PHP_URL_PATH );
+$blt_secure_site_host = strtolower( (string) wp_parse_url( home_url(), PHP_URL_HOST ) );
+$blt_secure_drifted   = $blt_secure_connected && ! empty( $blt_secure_zone['host'] ) && strtolower( (string) $blt_secure_zone['host'] ) !== $blt_secure_site_host;
+
+// Custom rules this plugin currently holds in the zone (budget display).
+$blt_secure_rules_used = 0;
+foreach ( array( 'custom_pack', 'country_block', 'leaked_creds', 'ioc' ) as $blt_secure_custom_feature ) {
+	$blt_secure_custom_record = $cf_state->deployment( $blt_secure_custom_feature );
+	if ( is_array( $blt_secure_custom_record ) && ! empty( $blt_secure_custom_record['rule_ids'] ) ) {
+		$blt_secure_rules_used += count( (array) $blt_secure_custom_record['rule_ids'] );
+	}
+}
+$blt_secure_rules_limit = Blt_Secure_Rule_Definitions::custom_rule_limit( $blt_secure_plan );
 ?>
 <div class="blt-cf">
 
@@ -56,7 +70,33 @@ $blt_secure_connected = $blt_secure_has_token && ! empty( $blt_secure_zone['zone
 			</div>
 		</div>
 
+		<?php if ( $blt_secure_drifted ) : ?>
+			<div class="notice notice-warning inline"><p>
+				<?php
+				printf(
+					/* translators: 1: host Cloudflare was connected for, 2: this site's host */
+					esc_html__( 'Cloudflare was connected for %1$s but this site is now %2$s. Deploy and Remove are blocked until you disconnect and reconnect the token on this site, so a moved site or a staging clone cannot change the live zone.', 'blt-secure' ),
+					'<strong>' . esc_html( $blt_secure_zone['host'] ) . '</strong>',
+					'<strong>' . esc_html( $blt_secure_site_host ) . '</strong>'
+				);
+				?>
+			</p></div>
+		<?php endif; ?>
+
 		<h2><?php esc_html_e( 'Edge protections', 'blt-secure' ); ?></h2>
+		<?php if ( $blt_secure_connected && $blt_secure_rules_limit > 0 ) : ?>
+			<p class="description" style="max-width:720px;">
+				<?php
+				printf(
+					/* translators: 1: custom rules this plugin holds, 2: plan name, 3: plan custom-rule limit */
+					esc_html__( 'Custom rules used by this plugin: %1$d (your %2$s plan allows %3$d per zone, shared with any rules you created yourself). A card that does not fit is skipped with an explanation instead of failing halfway.', 'blt-secure' ),
+					(int) $blt_secure_rules_used,
+					esc_html( $blt_secure_plan ),
+					(int) $blt_secure_rules_limit
+				);
+				?>
+			</p>
+		<?php endif; ?>
 		<?php if ( ! $blt_secure_connected ) : ?>
 			<p class="description"><?php esc_html_e( 'Connect a token above to enable one-click deployment.', 'blt-secure' ); ?></p>
 		<?php else : ?>
@@ -85,13 +125,26 @@ $blt_secure_connected = $blt_secure_has_token && ! empty( $blt_secure_zone['zone
 				$blt_secure_deployed  = null !== $blt_secure_record;
 				$blt_secure_stale     = false;
 				$blt_secure_stale_msg = '';
-				if ( $blt_secure_deployed && 'rate_limit' === $blt_secure_feature ) {
-					$blt_secure_stale     = $cf_state->is_stale( 'rate_limit', Blt_Secure_Rule_Definitions::config_hash( Blt_Secure_Rule_Definitions::rate_limit_rules( $blt_secure_login_slug ) ) );
-					$blt_secure_stale_msg = __( 'Your login slug changed since this rule was deployed — redeploy to update it.', 'blt-secure' );
-				}
-				if ( $blt_secure_deployed && 'country_block' === $blt_secure_feature && ! empty( $blt_secure_countries ) ) {
-					$blt_secure_stale     = $cf_state->is_stale( 'country_block', Blt_Secure_Rule_Definitions::config_hash( Blt_Secure_Rule_Definitions::country_block_rules( $blt_secure_countries, $blt_secure_login_only, $blt_secure_login_slug ) ) );
-					$blt_secure_stale_msg = __( 'Your login slug changed since this rule was deployed — redeploy to update it.', 'blt-secure' );
+				$blt_secure_partial   = $blt_secure_deployed && is_array( $blt_secure_record ) && ! empty( $blt_secure_record['partial'] );
+				$blt_secure_slug_msg  = __( 'Your login slug changed since this rule was deployed — redeploy to update it.', 'blt-secure' );
+				$blt_secure_def_msg   = __( 'The rule definition changed in this plugin version — redeploy to update it.', 'blt-secure' );
+				if ( $blt_secure_deployed && ! $blt_secure_partial ) {
+					if ( 'rate_limit' === $blt_secure_feature ) {
+						$blt_secure_stale     = $cf_state->is_stale( 'rate_limit', Blt_Secure_Rule_Definitions::config_hash( Blt_Secure_Rule_Definitions::rate_limit_rules( $blt_secure_login_slug, $blt_secure_plan, $blt_secure_base ) ) );
+						$blt_secure_stale_msg = $blt_secure_slug_msg;
+					} elseif ( 'country_block' === $blt_secure_feature && ! empty( $blt_secure_countries ) ) {
+						$blt_secure_stale     = $cf_state->is_stale( 'country_block', Blt_Secure_Rule_Definitions::config_hash( Blt_Secure_Rule_Definitions::country_block_rules( $blt_secure_countries, $blt_secure_login_only, $blt_secure_login_slug, $blt_secure_base ) ) );
+						$blt_secure_stale_msg = $blt_secure_slug_msg;
+					} elseif ( 'custom_pack' === $blt_secure_feature ) {
+						$blt_secure_stale     = $cf_state->is_stale( 'custom_pack', Blt_Secure_Rule_Definitions::config_hash( Blt_Secure_Rule_Definitions::custom_pack_rules( $blt_secure_base ) ) );
+						$blt_secure_stale_msg = $blt_secure_def_msg;
+					} elseif ( 'leaked_creds' === $blt_secure_feature ) {
+						$blt_secure_stale     = $cf_state->is_stale( 'leaked_creds', Blt_Secure_Rule_Definitions::config_hash( Blt_Secure_Rule_Definitions::leaked_creds_rules( $blt_secure_plan ) ) );
+						$blt_secure_stale_msg = __( 'Your Cloudflare plan changed since this was deployed — redeploy to use the matching check.', 'blt-secure' );
+					} elseif ( 'access' === $blt_secure_feature && ! empty( $blt_secure_zone['host'] ) ) {
+						$blt_secure_stale     = $cf_state->is_stale( 'access', Blt_Secure_Rule_Definitions::access_config_hash( $blt_secure_zone['host'], $blt_secure_login_slug, array( (string) get_option( 'admin_email' ) ), $blt_secure_base ) );
+						$blt_secure_stale_msg = __( 'The login slug or admin email changed since this was deployed — redeploy to update it.', 'blt-secure' );
+					}
 				}
 				?>
 				<div class="blt-card" data-feature="<?php echo esc_attr( $blt_secure_feature ); ?>">
@@ -134,7 +187,10 @@ $blt_secure_connected = $blt_secure_has_token && ! empty( $blt_secure_zone['zone
 					<?php endif; ?>
 
 					<p class="blt-card-status">
-						<?php if ( $blt_secure_stale ) : ?>
+						<?php if ( $blt_secure_partial ) : ?>
+							<span class="blt-badge blt-badge-warn"><?php esc_html_e( 'Partially deployed', 'blt-secure' ); ?></span>
+							<em><?php esc_html_e( 'A previous deploy did not finish. Redeploy to complete it, or Remove to clear what was created.', 'blt-secure' ); ?></em>
+						<?php elseif ( $blt_secure_stale ) : ?>
 							<span class="blt-badge blt-badge-warn"><?php esc_html_e( 'Update available', 'blt-secure' ); ?></span>
 							<em><?php echo esc_html( $blt_secure_stale_msg ); ?></em>
 						<?php elseif ( $blt_secure_deployed ) : ?>
