@@ -299,13 +299,27 @@ $blt_secure_sev_class = array(
 							<span class="blt-hc-title"><?php echo esc_html( $blt_secure_bf_label ); ?></span>
 							<span class="blt-hc-msg">
 								<?php
-								printf(
-									/* translators: 1: modified count, 2: added count, 3: removed count */
-									esc_html__( '%1$d modified, %2$d added, %3$d removed at the same version', 'blt-secure' ),
-									(int) $blt_secure_bf['modified'],
-									(int) $blt_secure_bf['added'],
-									(int) $blt_secure_bf['removed']
-								);
+								$blt_secure_bf_kind = isset( $blt_secure_bf['kind'] ) ? (string) $blt_secure_bf['kind'] : 'drift';
+								if ( 'unmonitored' === $blt_secure_bf_kind ) {
+									// The label already says why; there are no counts to show.
+									esc_html_e( 'These files cannot be checked for changes, so tampering here would go unnoticed.', 'blt-secure' );
+								} elseif ( 'version_bump' === $blt_secure_bf_kind ) {
+									printf(
+										/* translators: 1: modified count, 2: added count, 3: removed count */
+										esc_html__( 'The version changed without an update through WordPress, and %1$d files are modified, %2$d added, %3$d removed. If you updated this by hand, add it to the ignore list to accept the new files as the baseline.', 'blt-secure' ),
+										(int) $blt_secure_bf['modified'],
+										(int) $blt_secure_bf['added'],
+										(int) $blt_secure_bf['removed']
+									);
+								} else {
+									printf(
+										/* translators: 1: modified count, 2: added count, 3: removed count */
+										esc_html__( '%1$d modified, %2$d added, %3$d removed at the same version', 'blt-secure' ),
+										(int) $blt_secure_bf['modified'],
+										(int) $blt_secure_bf['added'],
+										(int) $blt_secure_bf['removed']
+									);
+								}
 								?>
 							</span>
 							<?php if ( ! empty( $blt_secure_bf['files'] ) ) : ?>
