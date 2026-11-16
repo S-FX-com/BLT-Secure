@@ -39,14 +39,28 @@ CI + 7.4 gate (`38f0a9f`), whitelist hardening (`dca06db`).
    Free zone cannot hold every card.
 4. **Host-scoped IP-list names** stop sites in one account overwriting each other's list, but Free allows **one**
    custom list per account — a second site on a Free account cannot create its own. Agencies are normally paid.
-5. **Retire the legacy fleet reporter and `dashboard/`** (spec 06) once Stage 2 lands?
-6. **Cloudflare token model** (spec 09): split into an *enforce* token and a read-only *audit* token? And may Buoy
+5. **Cloudflare "adopted vs created" on upgrade.** Records written by v1.1.0 carry no ownership flag, so they count as
+   *adopted*: after upgrading, **Remove no longer deletes this site's own Access app or IP list** (it reports a note
+   instead). That is the safe default — an old record cannot prove the object was not shared with another site — but
+   it changes behaviour. Alternative: delete legacy objects whose name matches the old fixed names. Your call.
+6. **Retire the legacy fleet reporter and `dashboard/`** (spec 06) once Stage 2 lands?
+7. **Cloudflare token model** (spec 09): split into an *enforce* token and a read-only *audit* token? And may Buoy
    hold any Cloudflare token? (`DECISIONS D-2026-08-27-03` says no, on purpose.)
-7. Small policy calls: make core's "username not registered" login error generic? Require `list_users` for
+8. Small policy calls: make core's "username not registered" login error generic? Require `list_users` for
    `/wp/v2/users` for logged-in subscribers (could break the editor's author picker)? Should `fleet_command` leave the
    shared event buffer?
-8. **Release key.** Buoy's README says the agent's release public key is still a placeholder that fails closed
+9. **Release key.** Buoy's README says the agent's release public key is still a placeholder that fails closed
    (no self-update) until the key ceremony is run — worth doing before signed BLT Secure releases (spec 01) reuse it.
+
+## 2b. Merge gates for the BLT-Secure PR
+
+A merge to `main` cuts a release that every client site installs, and several fixes were only exercised against shims or
+clean state. Do not merge until the **MERGE GATE** items in `tasks/todo.md` (Phase 6) pass on a staging site: the updater
+positive path, and the upgrade from v1.1.0 with Cloudflare already deployed. Pick the bump level in the squash-merge title
+(`#minor` — no commit message carries a tag, so the default is a patch). Release notes must mention: the fleet contract is
+now schema 2 (enrolled legacy sites need the Worker redeployed and re-enrolled together), the custom-rules pack drops from
+3 rules to 2 and needs a redeploy to retire the old TOR rule, alerts now arrive via WP-Cron, lockout is per
+account-per-address, and old "ignore" entries for uploads findings stop matching once.
 
 ## 3. Deliberately not fixed (and why)
 

@@ -34,6 +34,19 @@ class Blt_Secure_Cloudflare_State {
 	}
 
 	/**
+	 * The host this site's own zone discovery stored — never the shared-store gap-fill that
+	 * zone() applies. The host-drift guard must compare against what THIS site connected for:
+	 * the shared `zone_host` can belong to another plugin (an agency zone) and would make
+	 * every mutation look like a mismatch.
+	 *
+	 * @return string Lower-case host, or '' when none was stored (records from older versions).
+	 */
+	public function stored_zone_host() {
+		$state = $this->all();
+		return isset( $state['zone']['host'] ) ? strtolower( trim( (string) $state['zone']['host'] ) ) : '';
+	}
+
+	/**
 	 * Zone identity (zone_id, account_id, plan, host).
 	 *
 	 * The account id and host may be borrowed from the shared BLT family

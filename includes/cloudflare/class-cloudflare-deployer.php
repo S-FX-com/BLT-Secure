@@ -135,10 +135,13 @@ class Blt_Secure_Cloudflare_Deployer {
 	 * @return true|WP_Error
 	 */
 	private function guard_host( array $zone ) {
-		if ( null === $this->site_host || empty( $zone['host'] ) ) {
-			return true;
+		unset( $zone ); // Deliberately not used: zone() is gap-filled from the shared store.
+		$stored = $this->state->stored_zone_host();
+		if ( null === $this->site_host || '' === $stored ) {
+			return true; // Nothing recorded to compare with (records from older versions).
 		}
-		if ( strtolower( (string) $zone['host'] ) === $this->site_host ) {
+		// www and the bare domain are the same site; a different subdomain (a staging clone) is not.
+		if ( self::bare_host( $stored ) === self::bare_host( $this->site_host ) ) {
 			return true;
 		}
 		return new WP_Error(
@@ -146,10 +149,21 @@ class Blt_Secure_Cloudflare_Deployer {
 			sprintf(
 				/* translators: 1: host the Cloudflare zone was connected for, 2: this site's current host */
 				__( 'Cloudflare was connected for %1$s but this site is now %2$s (site moved, domain changed, or this is a clone). Nothing was changed — disconnect and reconnect your token on this site first.', 'blt-secure' ),
-				$zone['host'],
+				$stored,
 				$this->site_host
 			)
 		);
+	}
+
+	/**
+	 * A host without a leading "www.".
+	 *
+	 * @param string $host Host.
+	 * @return string
+	 */
+	private static function bare_host( $host ) {
+		$host = strtolower( (string) $host );
+		return 0 === strpos( $host, 'www.' ) ? substr( $host, 4 ) : $host;
 	}
 
 	/**
@@ -541,6 +555,15 @@ class Blt_Secure_Cloudflare_Deployer {
 		$threshold = isset( $config['score_threshold'] ) ? (int) $config['score_threshold'] : 40;
 		if ( ! in_array( $threshold, array( 25, 40, 60 ), true ) ) {
 			$threshold = 40;
+		}
+
+		// An unreadable plan must never be treated as Free: that would deploy the Free ruleset and
+		// then retire the Managed + OWASP rules of a paid zone on a transient API error.
+		if ( '' === $plan ) {
+			return new WP_Error(
+				'blt_cf_plan_unknown',
+				__( 'Cloudflare did not report this zone\'s plan, so the managed rulesets were left exactly as they are. Try again in a minute.', 'blt-secure' )
+			);
 		}
 
 		if ( in_array( $plan, array( 'pro', 'business', 'enterprise' ), true ) ) {

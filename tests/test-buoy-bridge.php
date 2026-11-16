@@ -8,6 +8,44 @@
 
 require_once dirname( __DIR__ ) . '/includes/class-buoy-bridge.php';
 
+/**
+ * The real malware scanner over a temp tree, with an injectable root and time budget.
+ */
+class Blt_Test_Bridge_Scanner extends Blt_Secure_Malware_Scanner {
+
+	/**
+	 * Roots to walk (label => path).
+	 *
+	 * @var array
+	 */
+	public $roots = array();
+
+	/**
+	 * Time budget in seconds.
+	 *
+	 * @var float
+	 */
+	public $budget = 60.0;
+
+	/**
+	 * Roots.
+	 *
+	 * @return array
+	 */
+	protected function scan_roots() {
+		return $this->roots;
+	}
+
+	/**
+	 * Budget.
+	 *
+	 * @return float
+	 */
+	protected function time_budget() {
+		return $this->budget;
+	}
+}
+
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -293,5 +331,99 @@ class Test_Buoy_Bridge extends TestCase {
 		$this->assertStringContainsString( "includes/class-buoy-bridge.php'", $main );
 		$this->assertStringContainsString( 'new Blt_Secure_Buoy_Bridge( $this->whitelist ) )->boot()', $core );
 		$this->assertStringNotContainsString( 'Blt_Secure_Buoy_Bridge', substr( $core, 0, (int) strpos( $core, 'private function init()' ) ), 'Wired inside init(), not as a module.' );
+	}
+
+	/**
+	 * Run the REAL malware scanner over a temp tree.
+	 *
+	 * @param float $budget Time budget (a negative value forces a partial scan).
+	 * @return array Scanner payload exactly as the module stores it.
+	 */
+	private function real_scan( $budget = 60.0 ) {
+		$tmp = sys_get_temp_dir() . '/blt-bridge-fixture'; // Fixed name: the path is part of the finding, so it must not vary between scans.
+		if ( is_dir( $tmp ) ) {
+			$this->rm( $tmp );
+		}
+		mkdir( $tmp . '/plugins/evil', 0777, true );
+		file_put_contents( $tmp . '/plugins/evil/shell.php', '<?php eval(base64_decode($_POST["x"]));' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
+		for ( $i = 0; $i < 60; $i++ ) {
+			file_put_contents( $tmp . "/plugins/evil/f{$i}.php", '<?php echo 1;' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
+		}
+		$scanner         = new Blt_Test_Bridge_Scanner();
+		$scanner->roots  = array( 'plugins' => $tmp . '/plugins' );
+		$scanner->budget = $budget;
+		$payload = $scanner->run();
+		$this->rm( $tmp );
+		return $payload;
+	}
+
+	/**
+	 * Remove a temp tree.
+	 *
+	 * @param string $dir Directory.
+	 * @return void
+	 */
+	private function rm( $dir ) {
+		foreach ( (array) glob( $dir . '/*' ) as $entry ) {
+			is_dir( $entry ) ? $this->rm( $entry ) : unlink( $entry ); // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink
+		}
+		rmdir( $dir ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_rmdir
+	}
+
+	public function test_real_scanner_output_flows_through_the_bridge() {
+		$malware = $this->real_scan();
+		$this->assertNotEmpty( $malware['findings'], 'Precondition: the real scanner flagged the planted webshell.' );
+
+		$out = $this->build( $this->payload( 'issues' ), $malware, $this->payload( 'findings' ) );
+
+		$this->assertNotContains( Blt_Secure_Buoy_Bridge::TRUNCATED_SIGNATURE, array_column( $out, 'signature' ), 'A complete real scan must not be marked incomplete.' );
+		$this->assertCount( count( $malware['findings'] ), $out );
+		$this->assertContains( 'high', array_column( $out, 'severity' ), 'critical signature capped to high.' );
+		$this->assertNotContains( 'critical', array_column( $out, 'severity' ) );
+		foreach ( $out as $row ) {
+			$this->assertSame( array( 'severity', 'signature', 'path' ), array_keys( $row ) );
+			$this->assertStringContainsString( 'shell.php', $row['path'] );
+		}
+	}
+
+	public function test_a_partial_real_scan_is_marked_incomplete_so_buoy_resolves_nothing_from_it() {
+		$partial = $this->real_scan( -1.0 );
+		$this->assertTrue( $partial['partial'], 'Precondition: a spent time budget yields a partial payload with the keys the bridge reads.' );
+
+		$out = $this->build( $this->payload( 'issues' ), $partial, $this->payload( 'findings' ) );
+
+		$this->assertContains( Blt_Secure_Buoy_Bridge::TRUNCATED_SIGNATURE, array_column( $out, 'signature' ) );
+	}
+
+	public function test_real_scanner_signatures_are_identical_across_scans() {
+		$a = $this->build( $this->payload( 'issues' ), $this->real_scan(), $this->payload( 'findings' ) );
+		$b = $this->build( $this->payload( 'issues' ), $this->real_scan(), $this->payload( 'findings' ) );
+		$this->assertSame( $a, $b, 'Same files, same signatures: Buoy must not see resolve-and-reopen churn.' );
+	}
+
+	public function test_signature_ignores_the_translated_description() {
+		$row = array(
+			'type'        => 'signature',
+			'path'        => 'a.php',
+			'severity'    => 'high',
+			'line'        => 3,
+			'hash'        => md5( 'content' ),
+			'description' => 'English text',
+			'fingerprint' => str_repeat( '1', 40 ),
+		);
+		// A different language changes the description AND therefore the stored fingerprint.
+		$translated                = $row;
+		$translated['description'] = 'Deutscher Text';
+		$translated['fingerprint'] = str_repeat( '2', 40 );
+
+		$one = $this->build( $this->payload( 'issues' ), $this->payload( 'findings', array( $row ) ), $this->payload( 'findings' ) );
+		$two = $this->build( $this->payload( 'issues' ), $this->payload( 'findings', array( $translated ) ), $this->payload( 'findings' ) );
+		$this->assertSame( $one[0]['signature'], $two[0]['signature'] );
+
+		// Edited file (new content hash) is a different finding.
+		$edited         = $row;
+		$edited['hash'] = md5( 'edited' );
+		$three          = $this->build( $this->payload( 'issues' ), $this->payload( 'findings', array( $edited ) ), $this->payload( 'findings' ) );
+		$this->assertNotSame( $one[0]['signature'], $three[0]['signature'] );
 	}
 }

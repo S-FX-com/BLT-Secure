@@ -557,6 +557,63 @@ class Test_Cf_Deployer_Safety extends TestCase {
 		$this->assertSame( array( 'blt-secure-waf-free' ), $cf->refs( 'http_request_firewall_managed' ) );
 	}
 
+	public function test_an_unreadable_plan_never_downgrades_a_paid_zone() {
+		$cf       = new Blt_Test_Fake_Cf();
+		$state    = $this->state( 'example.org', 'pro' );
+		$deployer = $this->deployer( $cf, $state );
+		$cf->plan = 'pro';
+		$first    = $deployer->deploy( 'waf_managed' );
+		$this->assertSame( 'full', $first['tier'] );
+		$before = $cf->refs( 'http_request_firewall_managed' );
+		$this->assertSame( array( 'blt-secure-waf-managed', 'blt-secure-waf-owasp' ), $before );
+
+		// Upgrade path: state from an older version has no plan, and Cloudflare does not report one now.
+		$zone                         = $state->all();
+		$zone['zone']['plan']         = '';
+		$zone['zone']['plan_checked'] = time() - 3600;
+		update_option( Blt_Secure_Cloudflare_State::OPTION, $zone );
+		$cf->plan = '';
+
+		$result = $this->deployer( $cf, $state )->deploy( 'waf_managed' );
+
+		$this->assertTrue( is_wp_error( $result ) );
+		$this->assertSame( 'blt_cf_plan_unknown', $result->get_error_code() );
+		$this->assertSame( $before, $cf->refs( 'http_request_firewall_managed' ), 'The paid rulesets must still be there.' );
+		$this->assertSame( array(), $cf->deleted, 'Nothing may be deleted when the plan is unknown.' );
+	}
+
+	public function test_host_guard_accepts_upgraded_state_www_and_ignores_the_shared_store_host() {
+		$cf = new Blt_Test_Fake_Cf();
+
+		// v1.1.0 stored the plain home_url host, same derivation as today.
+		$state = $this->state( 'example.org', 'pro' );
+		$this->assertFalse( is_wp_error( $this->deployer( $cf, $state, 'example.org' )->deploy( 'custom_pack' ) ) );
+
+		// www and the bare domain are one site.
+		$this->assertFalse( is_wp_error( $this->deployer( $cf, $state, 'www.example.org' )->deploy( 'custom_pack' ) ) );
+		$www = $this->state( 'www.example.org', 'pro' );
+		$this->assertFalse( is_wp_error( $this->deployer( $cf, $www, 'example.org' )->deploy( 'custom_pack' ) ) );
+
+		// A staging clone on a sibling subdomain is NOT.
+		$clone = $this->deployer( $cf, $state, 'staging.example.org' )->deploy( 'custom_pack' );
+		$this->assertTrue( is_wp_error( $clone ) );
+		$this->assertSame( 'blt_cf_host_mismatch', $clone->get_error_code() );
+
+		// A record from an older version with no stored host is never blocked by a host that came from
+		// somewhere else (zone() gap-fills from the shared store; the guard reads only what this site stored).
+		$old = new Blt_Secure_Cloudflare_State();
+		$old->set_zone(
+			array(
+				'zone_id'    => 'zone123',
+				'zone_name'  => 'example.org',
+				'account_id' => 'acct456',
+				'plan'       => 'pro',
+			)
+		);
+		$this->assertSame( '', $old->stored_zone_host() );
+		$this->assertFalse( is_wp_error( $this->deployer( $cf, $old, 'example.org' )->deploy( 'custom_pack' ) ) );
+	}
+
 	public function test_a_paid_plan_error_is_reported_not_silently_downgraded() {
 		$cf       = new Blt_Test_Fake_Cf();
 		$cf->plan = 'pro';

@@ -23,12 +23,19 @@ use PHPUnit\Framework\TestCase;
 class Test_Php74_Compat extends TestCase {
 
 	/**
-	 * Functions added after 7.4 that WordPress 6.0+ does NOT polyfill.
-	 * (str_contains / str_starts_with / str_ends_with are polyfilled since WP 5.9.)
+	 * Functions that do not exist on PHP 7.4.
+	 *
+	 * str_contains / str_starts_with / str_ends_with are included even though WordPress 5.9+
+	 * polyfills them in production: the unit-test bootstrap has no WordPress, so a plugin class
+	 * or test that calls one passes on 8.x and fatals on the 7.4 CI leg. Use strpos() or guard
+	 * the call with function_exists().
 	 *
 	 * @var string[]
 	 */
 	private static $new_functions = array(
+		'str_contains',
+		'str_starts_with',
+		'str_ends_with',
 		'get_debug_type',
 		'get_resource_id',
 		'fdiv',
@@ -62,14 +69,14 @@ class Test_Php74_Compat extends TestCase {
 	);
 
 	/**
-	 * Plugin PHP files that must stay 7.4-compatible.
+	 * PHP files that must stay 7.4-compatible: the plugin AND its tests (CI runs both on 7.4).
 	 *
 	 * @return string[]
 	 */
 	private static function plugin_files() {
 		$root  = dirname( __DIR__ );
 		$files = array();
-		$skip  = array( '/vendor/', '/node_modules/', '/includes/lib/', '/tests/', '/dashboard/', '/.git/' );
+		$skip  = array( '/vendor/', '/node_modules/', '/includes/lib/', '/dashboard/', '/.git/' );
 
 		$iterator = new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $root, FilesystemIterator::SKIP_DOTS ) );
 		foreach ( $iterator as $file ) {
@@ -325,7 +332,7 @@ class Test_Php74_Compat extends TestCase {
 	 *
 	 * @return void
 	 */
-	public function test_plugin_code_uses_nothing_newer_than_php_74() {
+	public function test_plugin_and_test_code_use_nothing_newer_than_php_74() {
 		$files = self::plugin_files();
 		$this->assertGreaterThan( 50, count( $files ), 'The scan found suspiciously few files; the gate may be pointing at the wrong directory.' );
 
@@ -363,6 +370,10 @@ class Test_Php74_Compat extends TestCase {
 			'array_is_list'         => array( '<?php $a = array_is_list( $x );', 'array_is_list' ),
 			'fdiv'                  => array( '<?php $a = fdiv( 1, 2 );', 'fdiv' ),
 			'ValueError'            => array( '<?php throw new ValueError( "x" );', 'ValueError' ),
+			'str_contains'          => array( '<?php $a = str_contains( "ab", "a" );', 'str_contains' ),
+			'str_starts_with'       => array( '<?php $a = str_starts_with( "ab", "a" );', 'str_starts_with' ),
+			'readonly property'     => array( '<?php class A { public readonly int $a; }', 'readonly' ),
+			'enum'                  => array( "<?php enum Suit: string { case H = 'h'; }", 'enum' ),
 		);
 	}
 
@@ -376,7 +387,7 @@ class Test_Php74_Compat extends TestCase {
 	 * @return void
 	 */
 	public function test_detector_fires( $code, $needle ) {
-		if ( in_array( $needle, array( 'match', 'nullsafe', 'attribute' ), true ) && PHP_VERSION_ID < 80000 ) {
+		if ( in_array( $needle, array( 'match', 'nullsafe', 'attribute' ), true ) && PHP_VERSION_ID < 80000 || in_array( $needle, array( 'readonly', 'enum' ), true ) && PHP_VERSION_ID < 80100 ) {
 			$this->markTestSkipped( 'These tokens only exist on PHP 8+; on 7.4 the file would not lex and php -l fails first.' );
 		}
 		$problems = self::problems( $code );
@@ -396,7 +407,8 @@ class Test_Php74_Compat extends TestCase {
 			'<?php class A { public static function make(): self { return new static(); } private $p; }',
 			'<?php try { f(); } catch ( Exception $e ) {} catch ( TypeError | Error $e ) {}',
 			'<?php if ( function_exists( "fdiv" ) ) { $a = fdiv( 1, 2 ); }',
-			'<?php $s = str_contains( "ab", "a" ); $t = $o->fdiv( 1 ); $u = A::get_debug_type( 1 );',
+			'<?php $s = strpos( "ab", "a" ); $t = $o->fdiv( 1 ); $u = A::get_debug_type( 1 );',
+			'<?php if ( function_exists( "str_contains" ) ) { $s = str_contains( "ab", "a" ); }',
 			'<?php function f( array $a = array( 1, 2 ), $b = [ 3, 4 ] ) { return f( 1, 2, ); }',
 			'<?php class A { public function fdiv( $a ) {} public function get_debug_type() {} }',
 		);

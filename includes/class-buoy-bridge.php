@@ -200,10 +200,12 @@ class Blt_Secure_Buoy_Bridge {
 	/**
 	 * Map one scanner finding to `{ severity, signature, path }`.
 	 *
-	 * The signature is built from stable, locale-independent parts (the
-	 * finding type and a fingerprint prefix) because Buoy de-duplicates on
-	 * signature + path: translated descriptions would reopen every finding
-	 * whenever the admin language changed.
+	 * The signature is built only from parts that do not change with the admin
+	 * language, because Buoy de-duplicates on signature + path and a changed
+	 * signature would resolve and reopen every finding. For malware that is the
+	 * finding type plus a hash of path, content hash and line (the stored
+	 * fingerprint also hashes the translated description, so it is not used).
+	 * Core and baseline fingerprints contain no translated text and are used.
 	 *
 	 * @param string $scanner        'core' | 'malware' | 'baseline'.
 	 * @param array  $finding        Stored finding.
@@ -223,7 +225,10 @@ class Blt_Secure_Buoy_Bridge {
 			$type      = isset( $finding['type'] ) ? preg_replace( '/[^a-z0-9_]/', '', strtolower( (string) $finding['type'] ) ) : 'finding';
 			$path      = isset( $finding['path'] ) ? (string) $finding['path'] : '';
 			$severity  = isset( $finding['severity'] ) ? strtolower( (string) $finding['severity'] ) : 'medium';
-			$signature = 'malware_' . $type . ( '' !== $short ? ':' . $short : '' );
+			// The stored fingerprint also hashes the translated description, so it changes when the
+			// admin language does. Build the signature from the stable parts instead.
+			$stable    = isset( $finding['hash'] ) ? sha1( $type . '|' . $path . '|' . (string) $finding['hash'] . '|' . ( isset( $finding['line'] ) ? (int) $finding['line'] : 0 ) ) : $short;
+			$signature = 'malware_' . $type . ( '' !== $stable ? ':' . substr( $stable, 0, 12 ) : '' );
 		} else {
 			$kind      = isset( $finding['kind'] ) ? preg_replace( '/[^a-z_]/', '', strtolower( (string) $finding['kind'] ) ) : 'drift';
 			$path      = isset( $finding['key'] ) ? (string) $finding['key'] : '';
