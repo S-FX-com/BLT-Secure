@@ -35,6 +35,68 @@ class Blt_Secure_Core_Scanner {
 	const MAX_ISSUES = 200;
 
 	/**
+	 * Extra issues allowed for the unknown-file pass, which always runs (it is
+	 * the backdoor check) even when the manifest pass already hit MAX_ISSUES.
+	 */
+	const MAX_UNKNOWN = 100;
+
+	/**
+	 * Manifest files the Health Check itself tells users to delete
+	 * (readme.html / license.txt fingerprint the version; wp-config-sample.php
+	 * is a leftover) and many hosts remove. Absent is fine — never "missing".
+	 * A MODIFIED copy is still reported.
+	 *
+	 * @return string[]
+	 */
+	public static function optional_files() {
+		$files = array( 'readme.html', 'license.txt', 'wp-config-sample.php' );
+
+		/**
+		 * Filter core files whose absence is not reported.
+		 *
+		 * @param string[] $files ABSPATH-relative paths.
+		 */
+		$files = apply_filters( 'blt_secure_core_optional_files', $files );
+		return is_array( $files ) ? $files : array();
+	}
+
+	/**
+	 * Files whose content differs between WordPress locales. When the official
+	 * manifest for the site's locale is unavailable and the en_US manifest is
+	 * used instead, these cannot be compared and are skipped.
+	 *
+	 * @return string[]
+	 */
+	public static function locale_variant_files() {
+		return array( 'readme.html', 'license.txt', 'wp-includes/version.php', 'wp-config-sample.php' );
+	}
+
+	/**
+	 * Root-level files that legitimately exist beside core but are not in the
+	 * checksum manifest (site-specific config).
+	 *
+	 * @return string[]
+	 */
+	public static function root_allowlist() {
+		$files = array( 'wp-config.php' );
+
+		/**
+		 * Filter root files the unknown-file pass accepts.
+		 *
+		 * @param string[] $files ABSPATH-relative file names.
+		 */
+		$files = apply_filters( 'blt_secure_core_root_allowlist', $files );
+		return is_array( $files ) ? $files : array();
+	}
+
+	/**
+	 * Whether the en_US manifest was used for a different site locale.
+	 *
+	 * @var bool
+	 */
+	protected $used_fallback = false;
+
+	/**
 	 * Decide a file's status from expected vs actual md5.
 	 *
 	 * Pure function (unit-tested). Returns a status constant, or '' when the
@@ -103,6 +165,8 @@ class Blt_Secure_Core_Scanner {
 		$checked   = 0;
 		$truncated = false;
 		$known     = array();
+		$optional  = self::optional_files();
+		$variant   = $this->used_fallback ? self::locale_variant_files() : array();
 
 		foreach ( $checksums as $path => $expected ) {
 			$path = ltrim( str_replace( '\\', '/', (string) $path ), '/' );
@@ -110,6 +174,9 @@ class Blt_Secure_Core_Scanner {
 				continue;
 			}
 			$known[] = $path;
+			if ( in_array( $path, $variant, true ) ) {
+				continue; // Locale-specific content; the en_US manifest cannot vouch for it.
+			}
 			++$checked;
 
 			$full   = ABSPATH . $path;
@@ -119,6 +186,9 @@ class Blt_Secure_Core_Scanner {
 			}
 			$status = self::classify( $expected, $actual );
 			if ( '' === $status ) {
+				continue;
+			}
+			if ( self::STATUS_MISSING === $status && in_array( $path, $optional, true ) ) {
 				continue;
 			}
 			if ( count( $issues ) >= self::MAX_ISSUES ) {
@@ -134,26 +204,27 @@ class Blt_Secure_Core_Scanner {
 			);
 		}
 
-		// Unexpected extra .php files in the core directories (a classic
-		// backdoor drop). Only run when we did not already hit the cap.
-		if ( ! $truncated ) {
-			$found   = $this->list_core_php_files();
-			$unknown = self::unknown_files( $found, $known );
-			foreach ( $unknown as $path ) {
-				if ( count( $issues ) >= self::MAX_ISSUES ) {
-					$truncated = true;
-					break;
-				}
-				$full     = ABSPATH . $path;
-				$md5      = is_readable( $full ) ? md5_file( $full ) : false;
-				$hash     = false === $md5 ? '' : (string) $md5;
-				$issues[] = array(
-					'path'        => $path,
-					'status'      => self::STATUS_UNKNOWN,
-					'hash'        => $hash,
-					'fingerprint' => Blt_Secure_Scan_Whitelist::fingerprint( 'core', array( self::STATUS_UNKNOWN, $path, $hash ) ),
-				);
+		// Unexpected extra executable files in the core directories and the
+		// ABSPATH root (a classic backdoor drop). Always runs — it has its own
+		// allowance so a noisy manifest pass cannot switch it off.
+		$found   = $this->list_core_php_files();
+		$unknown = self::unknown_files( $found, $known );
+		$allowed = self::MAX_UNKNOWN;
+		foreach ( $unknown as $path ) {
+			if ( $allowed <= 0 ) {
+				$truncated = true;
+				break;
 			}
+			--$allowed;
+			$full     = ABSPATH . $path;
+			$md5      = is_readable( $full ) ? md5_file( $full ) : false;
+			$hash     = false === $md5 ? '' : (string) $md5;
+			$issues[] = array(
+				'path'        => $path,
+				'status'      => self::STATUS_UNKNOWN,
+				'hash'        => $hash,
+				'fingerprint' => Blt_Secure_Scan_Whitelist::fingerprint( 'core', array( self::STATUS_UNKNOWN, $path, $hash ) ),
+			);
 		}
 
 		return $this->payload( $version, '', $checked, $issues, $truncated );
@@ -202,23 +273,29 @@ class Blt_Secure_Core_Scanner {
 	 * @return array|false path => md5 map, or false on failure.
 	 */
 	protected function fetch_checksums( $version, $locale ) {
+		$this->used_fallback = false;
 		if ( '' === $version ) {
 			return false;
 		}
+		$locale = empty( $locale ) ? 'en_US' : $locale;
 
 		$update_php = ABSPATH . 'wp-admin/includes/update.php';
 		if ( is_readable( $update_php ) ) {
 			require_once $update_php;
 		}
 		if ( function_exists( 'get_core_checksums' ) ) {
-			$checksums = get_core_checksums( $version, empty( $locale ) ? 'en_US' : $locale );
+			$checksums = get_core_checksums( $version, $locale );
 			if ( is_array( $checksums ) && ! empty( $checksums ) ) {
 				return $checksums;
 			}
-			// Some locales return only a nested set; retry en_US as a floor.
-			$checksums = get_core_checksums( $version, 'en_US' );
-			if ( is_array( $checksums ) && ! empty( $checksums ) ) {
-				return $checksums;
+			// No manifest for this locale yet: fall back to en_US, but flag it so
+			// the files that differ per locale are not compared against it.
+			if ( 'en_US' !== $locale ) {
+				$checksums = get_core_checksums( $version, 'en_US' );
+				if ( is_array( $checksums ) && ! empty( $checksums ) ) {
+					$this->used_fallback = true;
+					return $checksums;
+				}
 			}
 		}
 
@@ -226,7 +303,7 @@ class Blt_Secure_Core_Scanner {
 		$url      = 'https://api.wordpress.org/core/checksums/1.0/?' . http_build_query(
 			array(
 				'version' => $version,
-				'locale'  => empty( $locale ) ? 'en_US' : $locale,
+				'locale'  => $locale,
 			)
 		);
 		$response = wp_remote_get( $url, array( 'timeout' => 20 ) );
@@ -241,12 +318,31 @@ class Blt_Secure_Core_Scanner {
 	}
 
 	/**
-	 * List every .php file under the core directories, ABSPATH-relative.
+	 * List every executable-extension file (the malware scanner's PHP
+	 * extension set, not just .php) under wp-admin / wp-includes, plus the
+	 * ABSPATH root level, ABSPATH-relative.
 	 *
 	 * @return string[]
 	 */
 	protected function list_core_php_files() {
+		if ( ! class_exists( 'Blt_Secure_Malware_Scanner' ) ) {
+			require_once BLT_SECURE_DIR . 'includes/scanner/class-malware-scanner.php';
+		}
+
 		$found = array();
+
+		// Root level (one deep): wp-config.php and look-alike wp-*.php drops.
+		$root_ok = self::root_allowlist();
+		try {
+			foreach ( new FilesystemIterator( ABSPATH, FilesystemIterator::SKIP_DOTS ) as $file ) {
+				if ( ( $file->isFile() || $file->isLink() ) && Blt_Secure_Malware_Scanner::is_php_file( $file->getFilename() ) && ! in_array( $file->getFilename(), $root_ok, true ) ) {
+					$found[] = $file->getFilename();
+				}
+			}
+		} catch ( \Throwable $e ) { // phpcs:ignore Generic.CodeAnalysis.EmptyStatement.DetectedCatch
+			unset( $e );
+		}
+
 		foreach ( array( 'wp-admin', 'wp-includes' ) as $dir ) {
 			$base = ABSPATH . $dir;
 			if ( ! is_dir( $base ) ) {
@@ -260,7 +356,7 @@ class Blt_Secure_Core_Scanner {
 				continue;
 			}
 			foreach ( $iterator as $file ) {
-				if ( ! $file->isFile() || 'php' !== strtolower( $file->getExtension() ) ) {
+				if ( ! ( $file->isFile() || $file->isLink() ) || ! Blt_Secure_Malware_Scanner::is_php_file( $file->getFilename() ) ) {
 					continue;
 				}
 				$rel     = str_replace( '\\', '/', substr( $file->getPathname(), strlen( ABSPATH ) ) );

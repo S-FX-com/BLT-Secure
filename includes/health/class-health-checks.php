@@ -169,12 +169,62 @@ class Blt_Secure_Health_Checks {
 	// ---------------------------------------------------------------------
 
 	/**
+	 * Whether stored update data is too old (or absent) to trust.
+	 *
+	 * Pure function (unit-tested). "No data" and "stale data" both mean the
+	 * update checks have not run recently, so "up to date" cannot be claimed.
+	 *
+	 * @param int|null $last_checked Unix time of the last check, or null/0 if never.
+	 * @param int      $now          Current time.
+	 * @param int      $max_age      Maximum acceptable age in seconds.
+	 * @return bool
+	 */
+	public static function update_data_is_stale( $last_checked, $now, $max_age ) {
+		if ( empty( $last_checked ) ) {
+			return true;
+		}
+		return ( (int) $now - (int) $last_checked ) > (int) $max_age;
+	}
+
+	/**
+	 * A SKIP result when the named update transient is missing or stale, or
+	 * null when it is fresh enough to judge.
+	 *
+	 * @param string $transient Site transient (update_core / update_plugins / update_themes).
+	 * @return array|null
+	 */
+	private static function stale_update_result( $transient ) {
+		$data = get_site_transient( $transient );
+		$last = is_object( $data ) && isset( $data->last_checked ) ? (int) $data->last_checked : 0;
+
+		/**
+		 * Filter how old (seconds) update data may be before the update checks
+		 * report "unknown" instead of "up to date".
+		 *
+		 * @param int $max_age Seconds; default five days.
+		 */
+		$max = (int) apply_filters( 'blt_secure_update_data_max_age', 5 * DAY_IN_SECONDS );
+		if ( self::update_data_is_stale( $last, time(), $max ) ) {
+			return self::result(
+				Blt_Secure_Health_Result::SKIP,
+				__( 'WordPress has not checked for updates recently, so this cannot be verified.', 'blt-secure' ),
+				__( 'Update checks may be blocked (a plugin, a constant, or outbound firewall) or WP-Cron may not be running. Open Dashboard → Updates to refresh.', 'blt-secure' )
+			);
+		}
+		return null;
+	}
+
+	/**
 	 * @return array
 	 */
 	public static function core_updated() {
 		self::load_admin_includes();
 		if ( ! function_exists( 'get_core_updates' ) ) {
 			return self::result( Blt_Secure_Health_Result::SKIP, __( 'Core update data is unavailable.', 'blt-secure' ) );
+		}
+		$stale = self::stale_update_result( 'update_core' );
+		if ( null !== $stale ) {
+			return $stale;
 		}
 		$updates = get_core_updates();
 		if ( ! is_array( $updates ) || empty( $updates ) ) {
@@ -215,6 +265,10 @@ class Blt_Secure_Health_Checks {
 		self::load_admin_includes();
 		if ( ! function_exists( 'get_plugin_updates' ) ) {
 			return self::result( Blt_Secure_Health_Result::SKIP, __( 'Plugin update data is unavailable.', 'blt-secure' ) );
+		}
+		$stale = self::stale_update_result( 'update_plugins' );
+		if ( null !== $stale ) {
+			return $stale;
 		}
 		$updates = get_plugin_updates();
 		$count   = is_array( $updates ) ? count( $updates ) : 0;
@@ -269,6 +323,10 @@ class Blt_Secure_Health_Checks {
 		if ( ! function_exists( 'get_theme_updates' ) ) {
 			return self::result( Blt_Secure_Health_Result::SKIP, __( 'Theme update data is unavailable.', 'blt-secure' ) );
 		}
+		$stale = self::stale_update_result( 'update_themes' );
+		if ( null !== $stale ) {
+			return $stale;
+		}
 		$updates = get_theme_updates();
 		$count   = is_array( $updates ) ? count( $updates ) : 0;
 		if ( 0 === $count ) {
@@ -312,21 +370,86 @@ class Blt_Secure_Health_Checks {
 	 */
 	public static function php_supported() {
 		$version = PHP_VERSION;
-		if ( version_compare( $version, '8.1', '>=' ) ) {
-			return self::result( Blt_Secure_Health_Result::PASS, sprintf( /* translators: %s: PHP version */ __( 'PHP %s is actively supported.', 'blt-secure' ), $version ) );
+
+		/**
+		 * Filter the PHP end-of-security-support dates (minor version => Y-m-d).
+		 * Source: https://www.php.net/supported-versions.php. Versions newer
+		 * than the newest key are treated as supported.
+		 *
+		 * @param array<string,string> $dates Dates.
+		 */
+		$dates  = apply_filters( 'blt_secure_php_eol_dates', self::php_eol_dates() );
+		$status = self::php_support_status( $version, time(), is_array( $dates ) ? $dates : self::php_eol_dates() );
+
+		if ( 'supported' === $status ) {
+			return self::result( Blt_Secure_Health_Result::PASS, sprintf( /* translators: %s: PHP version */ __( 'PHP %s still receives security fixes.', 'blt-secure' ), $version ) );
 		}
-		if ( version_compare( $version, '7.4', '>=' ) ) {
+		if ( 'ending' === $status ) {
 			return self::result(
 				Blt_Secure_Health_Result::WARN,
-				sprintf( /* translators: %s: PHP version */ __( 'PHP %s no longer receives security fixes.', 'blt-secure' ), $version ),
-				__( 'Ask your host to move the site to PHP 8.1 or newer.', 'blt-secure' )
+				sprintf( /* translators: %s: PHP version */ __( 'PHP %s stops receiving security fixes soon.', 'blt-secure' ), $version ),
+				__( 'Plan a move to the newest supported PHP version with your host.', 'blt-secure' )
 			);
 		}
 		return self::result(
 			Blt_Secure_Health_Result::FAIL,
 			sprintf( /* translators: %s: PHP version */ __( 'PHP %s is end-of-life and unpatched.', 'blt-secure' ), $version ),
-			__( 'Upgrade to a supported PHP version (8.1+) as soon as possible.', 'blt-secure' )
+			__( 'Ask your host to upgrade to a supported PHP version as soon as possible.', 'blt-secure' )
 		);
+	}
+
+	/**
+	 * Last day of security support per PHP minor version.
+	 *
+	 * @return array<string,string>
+	 */
+	public static function php_eol_dates() {
+		return array(
+			'7.4' => '2022-11-28',
+			'8.0' => '2023-11-26',
+			'8.1' => '2025-12-31',
+			'8.2' => '2026-12-31',
+			'8.3' => '2027-12-31',
+			'8.4' => '2028-12-31',
+			'8.5' => '2029-12-31',
+		);
+	}
+
+	/**
+	 * Classify a PHP version against the support calendar.
+	 *
+	 * Pure function (unit-tested).
+	 *
+	 * @param string               $version PHP_VERSION.
+	 * @param int                  $now     Current Unix time.
+	 * @param array<string,string> $dates   Minor => end-of-security-support date.
+	 * @param int                  $window  Seconds before the date that count as "ending".
+	 * @return string 'supported' | 'ending' | 'eol'
+	 */
+	public static function php_support_status( $version, $now, array $dates, $window = 7776000 ) {
+		if ( ! preg_match( '/^(\d+)\.(\d+)/', (string) $version, $m ) ) {
+			return 'supported';
+		}
+		$minor = $m[1] . '.' . $m[2];
+		if ( isset( $dates[ $minor ] ) ) {
+			$end = strtotime( $dates[ $minor ] . ' 23:59:59 UTC' );
+			if ( false === $end ) {
+				return 'supported';
+			}
+			if ( $now > $end ) {
+				return 'eol';
+			}
+			return ( $end - $now ) <= $window ? 'ending' : 'supported';
+		}
+
+		// Unknown minor: older than every listed version is EOL, newer is supported.
+		$oldest = null;
+		foreach ( array_keys( $dates ) as $known ) {
+			if ( null === $oldest || version_compare( $known, $oldest, '<' ) ) {
+				$oldest = $known;
+			}
+		}
+		return ( null !== $oldest && version_compare( $minor, $oldest, '<' ) ) ? 'eol' : 'supported';
 	}
 
 	/**
@@ -412,14 +535,18 @@ class Blt_Secure_Health_Checks {
 	 * @return array
 	 */
 	public static function login_errors_generic() {
-		// The login-hardening module replaces login errors with a generic one.
-		if ( has_filter( 'login_errors' ) ) {
+		// Test the real behaviour, not the mere presence of a hook: run a probe
+		// through the filter chain. A generic-message filter replaces the text
+		// (the probe disappears); a hook that leaves it alone does not count.
+		$probe = 'BLT_SECURE_PROBE_The_username_admin_is_not_registered';
+		$out   = apply_filters( 'login_errors', $probe ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Probing a core filter on purpose.
+		if ( is_string( $out ) && false === strpos( $out, $probe ) ) {
 			return self::result( Blt_Secure_Health_Result::PASS, __( 'Login errors are replaced with a generic message.', 'blt-secure' ) );
 		}
 		return self::result(
 			Blt_Secure_Health_Result::WARN,
 			__( 'Login errors say whether the username or the password was wrong.', 'blt-secure' ),
-			__( 'That confirms valid usernames to attackers. Enabling login hardening replaces it with a single generic message.', 'blt-secure' )
+			__( 'That confirms valid usernames to attackers. BLT Secure does not change this message; add a login_errors filter that returns one generic sentence, or use a login-protection plugin that does.', 'blt-secure' )
 		);
 	}
 
@@ -535,15 +662,50 @@ class Blt_Secure_Health_Checks {
 	 * @return array
 	 */
 	public static function debug_log_hidden() {
-		$log = WP_CONTENT_DIR . '/debug.log';
+		$log = self::debug_log_path( defined( 'WP_DEBUG_LOG' ) ? WP_DEBUG_LOG : false, WP_CONTENT_DIR );
 		if ( ! file_exists( $log ) ) {
-			return self::result( Blt_Secure_Health_Result::PASS, __( 'No debug.log is present in wp-content.', 'blt-secure' ) );
+			return self::result( Blt_Secure_Health_Result::PASS, __( 'No debug log file is present.', 'blt-secure' ) );
+		}
+		if ( ! self::path_in_webroot( $log, ABSPATH ) ) {
+			return self::result( Blt_Secure_Health_Result::PASS, __( 'The debug log is stored outside the web root.', 'blt-secure' ) );
 		}
 		return self::result(
 			Blt_Secure_Health_Result::WARN,
-			__( 'A debug.log file exists in wp-content and may be downloadable.', 'blt-secure' ),
-			__( 'Delete wp-content/debug.log, or move the log outside the web root with WP_DEBUG_LOG set to an absolute path.', 'blt-secure' )
+			__( 'A debug log file exists inside the web root and may be downloadable.', 'blt-secure' ),
+			__( 'Delete it, or move the log outside the web root by setting WP_DEBUG_LOG to an absolute path above the site folder.', 'blt-secure' )
 		);
+	}
+
+	/**
+	 * Where WordPress writes the debug log: WP_DEBUG_LOG as a path string, else
+	 * wp-content/debug.log.
+	 *
+	 * Pure function (unit-tested).
+	 *
+	 * @param mixed  $constant    WP_DEBUG_LOG value (false when undefined).
+	 * @param string $content_dir WP_CONTENT_DIR.
+	 * @return string
+	 */
+	public static function debug_log_path( $constant, $content_dir ) {
+		if ( is_string( $constant ) && '' !== $constant && ! in_array( strtolower( $constant ), array( 'true', 'false', '1', '0' ), true ) ) {
+			return $constant;
+		}
+		return rtrim( (string) $content_dir, '/\\' ) . '/debug.log';
+	}
+
+	/**
+	 * Whether a path lies inside the web root (ABSPATH).
+	 *
+	 * Pure function (unit-tested).
+	 *
+	 * @param string $path    File path.
+	 * @param string $webroot ABSPATH.
+	 * @return bool
+	 */
+	public static function path_in_webroot( $path, $webroot ) {
+		$path    = str_replace( '\\', '/', (string) $path );
+		$webroot = rtrim( str_replace( '\\', '/', (string) $webroot ), '/' ) . '/';
+		return 0 === strpos( $path, $webroot );
 	}
 
 	/**
@@ -739,41 +901,132 @@ class Blt_Secure_Health_Checks {
 	 * @return array
 	 */
 	public static function no_installer_files() {
-		$found = array();
-		foreach ( array( 'readme.html', 'license.txt', 'wp-config-sample.php', 'install.php' ) as $file ) {
-			// install.php lives in wp-admin; the rest in the root.
-			$path = 'install.php' === $file ? ABSPATH . 'wp-admin/install.php' : ABSPATH . $file;
-			if ( file_exists( $path ) ) {
-				$found[] = $file;
+		$names = @scandir( ABSPATH ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+		if ( ! is_array( $names ) ) {
+			return self::result( Blt_Secure_Health_Result::SKIP, __( 'The web root could not be listed from PHP.', 'blt-secure' ) );
+		}
+
+		$leftovers = array();
+		$sample    = false;
+		foreach ( array_slice( $names, 0, 3000 ) as $name ) {
+			if ( 'wp-config-sample.php' === $name ) {
+				$sample = true;
+			} elseif ( self::is_leftover_name( $name ) ) {
+				$leftovers[] = $name;
 			}
 		}
-		// readme.html / license.txt are covered by readme_absent; here we flag the samples only for signal.
-		$installers = array_intersect( $found, array( 'wp-config-sample.php' ) );
-		if ( empty( $installers ) ) {
-			return self::result( Blt_Secure_Health_Result::PASS, __( 'No obvious leftover installer files were found in the web root.', 'blt-secure' ) );
+
+		if ( ! empty( $leftovers ) ) {
+			return self::result(
+				Blt_Secure_Health_Result::FAIL,
+				sprintf(
+					/* translators: %s: comma-separated file names */
+					__( 'Leftover installer, backup or config-copy files are in the web root: %s', 'blt-secure' ),
+					implode( ', ', array_slice( $leftovers, 0, 8 ) )
+				),
+				__( 'Installer scripts, database dumps, site archives and wp-config copies are downloadable by anyone and routinely used to take over sites. Delete them (keep backups outside the web root).', 'blt-secure' )
+			);
 		}
-		return self::result(
-			Blt_Secure_Health_Result::WARN,
-			__( 'A wp-config-sample.php file is present in the web root.', 'blt-secure' ),
-			__( 'It is harmless but advertises WordPress. You may delete it.', 'blt-secure' )
+		if ( $sample ) {
+			return self::result(
+				Blt_Secure_Health_Result::WARN,
+				__( 'A wp-config-sample.php file is present in the web root.', 'blt-secure' ),
+				__( 'It is harmless but advertises WordPress. You may delete it.', 'blt-secure' )
+			);
+		}
+		return self::result( Blt_Secure_Health_Result::PASS, __( 'No leftover installer, backup or config-copy files were found in the web root.', 'blt-secure' ) );
+	}
+
+	/**
+	 * Whether a web-root entry name is a leftover that should not be public:
+	 * migration installers, SQL dumps, site archives, wp-config copies,
+	 * phpinfo/test scripts, .env, .git, error logs.
+	 *
+	 * Pure function (unit-tested).
+	 *
+	 * @param string $name Directory entry name.
+	 * @return bool
+	 */
+	public static function is_leftover_name( $name ) {
+		$name  = strtolower( (string) $name );
+		$exact = array( 'dup-installer', 'phpinfo.php', 'info.php', 'php-info.php', 'pi.php', 'test.php', '.env', '.git', 'debug.log', '.wp-config.php.swp' );
+		if ( in_array( $name, $exact, true ) ) {
+			return true;
+		}
+		$patterns = array(
+			'/^installer(?:-backup|-data|-log)?\.(?:php|sql|txt)$/',
+			'/^wp-config\.(?:php\.)?(?:bak|old|orig|save|swp|txt|copy|backup)$/',
+			'/^wp-config\.php~$/',
+			'/\.sql(?:\.gz|\.zip)?$/',
+			'/^(?:backup|site|www|public_html|website|wordpress|wp)\.(?:zip|tar|tar\.gz|tgz|rar|7z)$/',
+			'/backup.*\.(?:zip|tar|tar\.gz|tgz|7z)$/',
 		);
+		foreach ( $patterns as $pattern ) {
+			if ( preg_match( $pattern, $name ) ) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**
 	 * @return array
 	 */
 	public static function timthumb_absent() {
-		$dir = get_stylesheet_directory();
-		foreach ( array( 'timthumb.php', 'thumb.php', 'includes/timthumb.php', 'lib/timthumb.php' ) as $rel ) {
-			if ( file_exists( trailingslashit( $dir ) . $rel ) ) {
-				return self::result(
-					Blt_Secure_Health_Result::FAIL,
-					__( 'The active theme ships a TimThumb-style script.', 'blt-secure' ),
-					__( 'Old TimThumb copies allow remote code execution. Remove it or update the theme.', 'blt-secure' )
-				);
+		$hits = array();
+
+		// Active theme and its parent (child themes inherit the parent's copy).
+		$dirs = array_unique( array( get_stylesheet_directory(), get_template_directory() ) );
+		foreach ( $dirs as $dir ) {
+			$hits = array_merge( $hits, self::find_timthumb( (string) $dir ) );
+		}
+
+		// Plugin folders (bounded): old TimThumb copies live in plugins too.
+		$plugin_dir = defined( 'WP_PLUGIN_DIR' ) ? WP_PLUGIN_DIR : WP_CONTENT_DIR . '/plugins';
+		$plugins    = @glob( trailingslashit( $plugin_dir ) . '*', GLOB_ONLYDIR ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+		foreach ( array_slice( is_array( $plugins ) ? $plugins : array(), 0, 200 ) as $dir ) {
+			$hits = array_merge( $hits, self::find_timthumb( $dir ) );
+		}
+
+		if ( ! empty( $hits ) ) {
+			return self::result(
+				Blt_Secure_Health_Result::FAIL,
+				sprintf(
+					/* translators: %s: comma-separated file paths */
+					__( 'A TimThumb script was found: %s', 'blt-secure' ),
+					implode( ', ', array_slice( array_unique( $hits ), 0, 5 ) )
+				),
+				__( 'Old TimThumb copies allow remote code execution. Remove it or update the theme/plugin that ships it.', 'blt-secure' )
+			);
+		}
+		return self::result( Blt_Secure_Health_Result::PASS, __( 'No TimThumb script was found in the active theme or plugins.', 'blt-secure' ) );
+	}
+
+	/**
+	 * TimThumb copies inside one theme/plugin folder. `timthumb.php` is
+	 * unambiguous; the generic `thumb.php` only counts when its content
+	 * actually identifies TimThumb.
+	 *
+	 * @param string $dir Folder.
+	 * @return string[] Basename-relative hit paths.
+	 */
+	private static function find_timthumb( $dir ) {
+		$hits = array();
+		$base = trailingslashit( $dir );
+		foreach ( array( 'timthumb.php', 'includes/timthumb.php', 'lib/timthumb.php', 'inc/timthumb.php', 'scripts/timthumb.php' ) as $rel ) {
+			if ( file_exists( $base . $rel ) ) {
+				$hits[] = basename( $dir ) . '/' . $rel;
 			}
 		}
-		return self::result( Blt_Secure_Health_Result::PASS, __( 'No TimThumb script is present in the active theme.', 'blt-secure' ) );
+		foreach ( array( 'thumb.php', 'includes/thumb.php', 'lib/thumb.php' ) as $rel ) {
+			if ( file_exists( $base . $rel ) ) {
+				$head = @file_get_contents( $base . $rel, false, null, 0, 8192 ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents, WordPress.PHP.NoSilencedErrors.Discouraged
+				if ( false !== $head && false !== stripos( $head, 'timthumb' ) ) {
+					$hits[] = basename( $dir ) . '/' . $rel;
+				}
+			}
+		}
+		return $hits;
 	}
 
 	// ---------------------------------------------------------------------
@@ -784,14 +1037,21 @@ class Blt_Secure_Health_Checks {
 	 * @return array
 	 */
 	public static function version_hidden() {
-		if ( has_action( 'wp_head', 'wp_generator' ) ) {
-			return self::result(
-				Blt_Secure_Health_Result::WARN,
-				__( 'The WordPress version is printed in the page <meta> generator tag.', 'blt-secure' ),
-				__( 'Enable "Hide the WordPress version" on the Hardening tab so the version is not advertised.', 'blt-secure' )
-			);
+		// Judge the real output: the generator tag is emitted through the
+		// `the_generator` filter, which "Hide the WordPress version" empties —
+		// the wp_head action itself stays registered, so has_action() alone
+		// would report a hidden version as exposed forever.
+		global $wp_version;
+		$sample = '<meta name="generator" content="WordPress ' . $wp_version . '" />';
+		$out    = (string) apply_filters( 'the_generator', $sample, 'html' ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Probing a core filter on purpose.
+		if ( ! has_action( 'wp_head', 'wp_generator' ) || '' === trim( $out ) || false === strpos( $out, (string) $wp_version ) ) {
+			return self::result( Blt_Secure_Health_Result::PASS, __( 'The WordPress version is not printed in the generator tag.', 'blt-secure' ) );
 		}
-		return self::result( Blt_Secure_Health_Result::PASS, __( 'The WordPress version generator tag is removed.', 'blt-secure' ) );
+		return self::result(
+			Blt_Secure_Health_Result::WARN,
+			__( 'The WordPress version is printed in the page <meta> generator tag.', 'blt-secure' ),
+			__( 'Enable "Hide the WordPress version" on the Hardening tab so the version is not advertised.', 'blt-secure' )
+		);
 	}
 
 	/**
@@ -799,7 +1059,7 @@ class Blt_Secure_Health_Checks {
 	 */
 	public static function wlw_hidden() {
 		if ( has_action( 'wp_head', 'wlwmanifest_link' ) ) {
-			return self::result( Blt_Secure_Health_Result::WARN, __( 'The Windows Live Writer manifest link is present in the page head.', 'blt-secure' ), __( 'It is obsolete and only adds fingerprinting surface; it can be removed.', 'blt-secure' ) );
+			return self::result( Blt_Secure_Health_Result::WARN, __( 'The Windows Live Writer manifest link is present in the page head.', 'blt-secure' ), __( 'It is obsolete and only adds fingerprinting surface. BLT Secure does not remove it; add remove_action( \'wp_head\', \'wlwmanifest_link\' ) in a small snippet if you want it gone. Advisory only.', 'blt-secure' ) );
 		}
 		return self::result( Blt_Secure_Health_Result::PASS, __( 'The Windows Live Writer manifest link is removed.', 'blt-secure' ) );
 	}
@@ -809,7 +1069,7 @@ class Blt_Secure_Health_Checks {
 	 */
 	public static function rsd_hidden() {
 		if ( has_action( 'wp_head', 'rsd_link' ) ) {
-			return self::result( Blt_Secure_Health_Result::WARN, __( 'The RSD/EditURI link is present in the page head.', 'blt-secure' ), __( 'It is only used by legacy blog clients over XML-RPC and can be removed.', 'blt-secure' ) );
+			return self::result( Blt_Secure_Health_Result::WARN, __( 'The RSD/EditURI link is present in the page head.', 'blt-secure' ), __( 'It is only used by legacy blog clients over XML-RPC. BLT Secure does not remove it; add remove_action( \'wp_head\', \'rsd_link\' ) in a small snippet if you want it gone. Advisory only.', 'blt-secure' ) );
 		}
 		return self::result( Blt_Secure_Health_Result::PASS, __( 'The RSD/EditURI link is removed.', 'blt-secure' ) );
 	}
@@ -820,7 +1080,7 @@ class Blt_Secure_Health_Checks {
 	public static function rest_link_hidden() {
 		$present = has_action( 'wp_head', 'rest_output_link_wp_head' );
 		if ( $present ) {
-			return self::result( Blt_Secure_Health_Result::WARN, __( 'The REST API link is advertised in the page head.', 'blt-secure' ), __( 'This is informational only; removing it slightly reduces fingerprinting.', 'blt-secure' ) );
+			return self::result( Blt_Secure_Health_Result::WARN, __( 'The REST API link is advertised in the page head.', 'blt-secure' ), __( 'This is informational only; removing it slightly reduces fingerprinting. BLT Secure does not remove it (the REST API is public by design).', 'blt-secure' ) );
 		}
 		return self::result( Blt_Secure_Health_Result::PASS, __( 'The REST API link is not advertised in the page head.', 'blt-secure' ) );
 	}
@@ -874,12 +1134,25 @@ class Blt_Secure_Health_Checks {
 	 * @param string                    $header    Header name.
 	 * @param string                    $advisory  Guidance when absent.
 	 * @param bool                      $advisory_only Absent → WARN (true) or FAIL (false).
+	 * @param callable|null             $validator   Returns true when a present value is acceptable.
 	 * @return array
 	 */
-	private static function header_present( $ctx, $header, $advisory, $advisory_only = true ) {
+	private static function header_present( $ctx, $header, $advisory, $advisory_only = true, $validator = null ) {
 		$value = $ctx->header( $header );
 		if ( null === $value ) {
-			return self::result( Blt_Secure_Health_Result::SKIP, __( 'The site could not be reached to read its response headers.', 'blt-secure' ) );
+			return self::result( Blt_Secure_Health_Result::SKIP, __( 'The site could not be reached (or did not return a normal page) to read its response headers.', 'blt-secure' ) );
+		}
+		if ( '' !== $value && null !== $validator && ! call_user_func( $validator, $value ) ) {
+			return self::result(
+				Blt_Secure_Health_Result::WARN,
+				sprintf(
+					/* translators: 1: header name, 2: header value */
+					__( '%1$s is sent but its value is not protective: %2$s', 'blt-secure' ),
+					$header,
+					$value
+				),
+				$advisory
+			);
 		}
 		if ( '' !== $value ) {
 			return self::result(
@@ -904,7 +1177,58 @@ class Blt_Secure_Health_Checks {
 	 * @return array
 	 */
 	public static function header_nosniff( $ctx ) {
-		return self::header_present( $ctx, 'X-Content-Type-Options', __( 'Enable "Send security headers" on the Hardening tab, or set it at your server/Cloudflare.', 'blt-secure' ), false );
+		return self::header_present( $ctx, 'X-Content-Type-Options', __( 'Enable "Send security headers" on the Hardening tab, or set it at your server/Cloudflare. The value must be "nosniff".', 'blt-secure' ), false, array( __CLASS__, 'valid_nosniff' ) );
+	}
+
+	/**
+	 * X-Content-Type-Options is only protective as "nosniff". Pure (unit-tested).
+	 *
+	 * @param string $value Header value.
+	 * @return bool
+	 */
+	public static function valid_nosniff( $value ) {
+		return false !== stripos( (string) $value, 'nosniff' );
+	}
+
+	/**
+	 * X-Frame-Options must be DENY, SAMEORIGIN or ALLOW-FROM. Pure (unit-tested).
+	 *
+	 * @param string $value Header value.
+	 * @return bool
+	 */
+	public static function valid_xframe( $value ) {
+		$value = strtoupper( trim( (string) $value ) );
+		return 'DENY' === $value || 'SAMEORIGIN' === $value || 0 === strpos( $value, 'ALLOW-FROM' );
+	}
+
+	/**
+	 * HSTS only protects with a positive max-age (max-age=0 deletes the
+	 * policy). Pure (unit-tested).
+	 *
+	 * @param string $value Header value.
+	 * @return bool
+	 */
+	public static function valid_hsts( $value ) {
+		return (bool) preg_match( '/max-age\s*=\s*"?(\d+)"?/i', (string) $value, $m ) && (int) $m[1] > 0;
+	}
+
+	/**
+	 * Referrer-Policy: the browser applies the LAST recognized token; the
+	 * leaky unsafe-url (and an empty value) do not count. Pure (unit-tested).
+	 *
+	 * @param string $value Header value.
+	 * @return bool
+	 */
+	public static function valid_referrer( $value ) {
+		$ok   = array( 'no-referrer', 'same-origin', 'strict-origin', 'strict-origin-when-cross-origin', 'origin', 'origin-when-cross-origin', 'no-referrer-when-downgrade' );
+		$last = '';
+		foreach ( explode( ',', strtolower( (string) $value ) ) as $token ) {
+			$token = trim( $token );
+			if ( in_array( $token, $ok, true ) || 'unsafe-url' === $token ) {
+				$last = $token;
+			}
+		}
+		return '' !== $last && 'unsafe-url' !== $last;
 	}
 
 	/**
@@ -913,11 +1237,11 @@ class Blt_Secure_Health_Checks {
 	 */
 	public static function header_xframe( $ctx ) {
 		// X-Frame-Options or a CSP frame-ancestors directive both satisfy this.
-		$csp = (string) $ctx->header( 'Content-Security-Policy' );
-		if ( null !== $ctx->header( 'X-Frame-Options' ) && false !== stripos( $csp, 'frame-ancestors' ) ) {
+		$csp = $ctx->header( 'Content-Security-Policy' );
+		if ( null !== $csp && false !== stripos( $csp, 'frame-ancestors' ) ) {
 			return self::result( Blt_Secure_Health_Result::PASS, __( 'Clickjacking is prevented via a CSP frame-ancestors directive.', 'blt-secure' ) );
 		}
-		return self::header_present( $ctx, 'X-Frame-Options', __( 'Set X-Frame-Options (SAMEORIGIN) on the Hardening tab to prevent clickjacking.', 'blt-secure' ), false );
+		return self::header_present( $ctx, 'X-Frame-Options', __( 'Set X-Frame-Options (SAMEORIGIN) on the Hardening tab to prevent clickjacking.', 'blt-secure' ), false, array( __CLASS__, 'valid_xframe' ) );
 	}
 
 	/**
@@ -928,7 +1252,7 @@ class Blt_Secure_Health_Checks {
 		if ( 0 !== strpos( strtolower( (string) home_url() ), 'https://' ) ) {
 			return self::result( Blt_Secure_Health_Result::SKIP, __( 'HSTS only applies once the site is on HTTPS.', 'blt-secure' ) );
 		}
-		return self::header_present( $ctx, 'Strict-Transport-Security', __( 'Enable HSTS on the Hardening tab so browsers refuse to connect over plain HTTP.', 'blt-secure' ), true );
+		return self::header_present( $ctx, 'Strict-Transport-Security', __( 'Enable HSTS on the Hardening tab so browsers refuse to connect over plain HTTP. max-age must be greater than 0.', 'blt-secure' ), true, array( __CLASS__, 'valid_hsts' ) );
 	}
 
 	/**
@@ -936,7 +1260,7 @@ class Blt_Secure_Health_Checks {
 	 * @return array
 	 */
 	public static function header_referrer( $ctx ) {
-		return self::header_present( $ctx, 'Referrer-Policy', __( 'Set a Referrer-Policy (strict-origin-when-cross-origin) on the Hardening tab.', 'blt-secure' ), true );
+		return self::header_present( $ctx, 'Referrer-Policy', __( 'Set a Referrer-Policy (strict-origin-when-cross-origin) on the Hardening tab; unsafe-url leaks full URLs.', 'blt-secure' ), true, array( __CLASS__, 'valid_referrer' ) );
 	}
 
 	/**
