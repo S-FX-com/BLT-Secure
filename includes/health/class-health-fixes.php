@@ -25,6 +25,11 @@ if ( ! defined( 'ABSPATH' ) ) {
 class Blt_Secure_Health_Fixes {
 
 	/**
+	 * Non-autoloaded record of values a fix overwrote (check id => details).
+	 */
+	const UNDO_OPTION = 'blt_secure_health_fix_undo';
+
+	/**
 	 * The fix catalogue: check id => [ label, callback ].
 	 *
 	 * `label` is the short action shown on the Fix button. `callback` is
@@ -194,7 +199,33 @@ class Blt_Secure_Health_Fixes {
 	 * @return true
 	 */
 	public static function fix_xmlrpc_disabled( $options ) {
+		// Jetpack (and the WordPress mobile apps) talk to the site over XML-RPC:
+		// a one-click disable would silently break the Jetpack connection. Make
+		// the admin choose deliberately on the Hardening tab instead.
+		if ( self::jetpack_active() ) {
+			/**
+			 * Filter to let the one-click XML-RPC fix run even though Jetpack is
+			 * active (e.g. Jetpack is installed but not connected).
+			 *
+			 * @param bool $allow Default false.
+			 */
+			if ( ! apply_filters( 'blt_secure_xmlrpc_fix_ignore_jetpack', false ) ) {
+				return new WP_Error(
+					'blt_xmlrpc_jetpack',
+					__( 'Jetpack is active and uses XML-RPC to connect to WordPress.com, so this one-click fix is blocked. If you are sure you do not need it, switch XML-RPC off on the Hardening tab.', 'blt-secure' )
+				);
+			}
+		}
 		return self::set_section( $options, 'xmlrpc', array( 'enabled' => false ) );
+	}
+
+	/**
+	 * Whether Jetpack is loaded.
+	 *
+	 * @return bool
+	 */
+	private static function jetpack_active() {
+		return class_exists( 'Jetpack' ) || defined( 'JETPACK__VERSION' );
 	}
 
 	/**
@@ -266,6 +297,19 @@ class Blt_Secure_Health_Fixes {
 	 */
 	public static function fix_registration_off( $options ) {
 		unset( $options );
+
+		// Snapshot the previous value so the change can be undone by hand (and
+		// so support can see what was changed) — "disable registration" is a
+		// core option, outside this plugin's own settings.
+		$undo                     = get_option( self::UNDO_OPTION, array() );
+		$undo                     = is_array( $undo ) ? $undo : array();
+		$undo['registration_off'] = array(
+			'option' => 'users_can_register',
+			'value'  => get_option( 'users_can_register', 0 ),
+			'time'   => time(),
+		);
+		update_option( self::UNDO_OPTION, $undo, false );
+
 		update_option( 'users_can_register', 0 );
 		return true;
 	}

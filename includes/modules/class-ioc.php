@@ -25,7 +25,8 @@ class Blt_Secure_Ioc implements Blt_Secure_Module {
 	const AJAX_RUN       = 'blt_secure_ioc_sync_run';
 
 	/**
-	 * Cloudflare IP Lists cap at 10k items on the free tier.
+	 * Cloudflare custom lists cap at 10,000 items per account on Free, Pro and
+	 * Business (shared by every list in the account; 500,000 on Enterprise).
 	 */
 	const MAX_IPS = 10000;
 
@@ -136,6 +137,95 @@ class Blt_Secure_Ioc implements Blt_Secure_Module {
 	}
 
 	/**
+	 * Fold fetched feed responses into one indicator set.
+	 *
+	 * A feed counts as FAILED on a transport error, a non-200 status, or a
+	 * body that yields no usable entries (a changed format must not silently
+	 * shrink the blocklist). Pure function (unit-tested).
+	 *
+	 * @param array[] $fetched Each: id, format, code, body, error.
+	 * @return array{ips:string[],per_feed:array,failed:array}
+	 */
+	public static function collect( array $fetched ) {
+		$ips      = array();
+		$per_feed = array();
+		$failed   = array();
+
+		foreach ( $fetched as $item ) {
+			$id    = isset( $item['id'] ) ? (string) $item['id'] : '';
+			$error = isset( $item['error'] ) ? (string) $item['error'] : '';
+			$code  = isset( $item['code'] ) ? (int) $item['code'] : 0;
+
+			if ( '' !== $error ) {
+				$failed[ $id ] = $error;
+				continue;
+			}
+			if ( 200 !== $code ) {
+				$failed[ $id ] = sprintf( 'HTTP %d', $code );
+				continue;
+			}
+
+			$parsed = Blt_Secure_Ioc_Parser::parse( isset( $item['format'] ) ? $item['format'] : '', isset( $item['body'] ) ? (string) $item['body'] : '' );
+			if ( empty( $parsed ) ) {
+				$failed[ $id ] = 'no usable entries';
+				continue;
+			}
+
+			$per_feed[ $id ] = count( $parsed );
+			$ips             = array_merge( $ips, $parsed );
+		}
+
+		return array(
+			'ips'      => array_values( array_unique( $ips ) ),
+			'per_feed' => $per_feed,
+			'failed'   => $failed,
+		);
+	}
+
+	/**
+	 * Addresses and ranges that must never be blocked: this server, the admin
+	 * running a manual sync, and Cloudflare's own edge.
+	 *
+	 * @return array{ips:string[],ranges:string[]}
+	 */
+	private function protected_targets() {
+		$ips = array();
+		if ( isset( $_SERVER['SERVER_ADDR'] ) ) {
+			$ips[] = sanitize_text_field( wp_unslash( $_SERVER['SERVER_ADDR'] ) );
+		}
+		// A manual sync runs in the admin's own request; cron has no admin IP.
+		if ( is_admin() && isset( $_SERVER['REMOTE_ADDR'] ) ) {
+			$ips[] = sanitize_text_field( wp_unslash( $_SERVER['REMOTE_ADDR'] ) );
+		}
+
+		$ranges = array();
+		if ( class_exists( 'Blt_Secure_Ip_Resolver' ) ) {
+			$stored = get_option( Blt_Secure_Ip_Resolver::IPS_OPTION, null );
+			$ranges = ( is_array( $stored ) && ! empty( $stored ) ) ? $stored : Blt_Secure_Ip_Resolver::CF_RANGES;
+		}
+
+		/**
+		 * Filter the addresses the IOC sync must never block (e.g. an office
+		 * IP, a monitoring service, a payment webhook sender).
+		 *
+		 * @param string[] $ips Single IPs and/or CIDR ranges.
+		 */
+		$extra = apply_filters( 'blt_secure_ioc_never_block', array() );
+		foreach ( (array) $extra as $item ) {
+			if ( false !== strpos( (string) $item, '/' ) ) {
+				$ranges[] = (string) $item;
+			} else {
+				$ips[] = (string) $item;
+			}
+		}
+
+		return array(
+			'ips'    => array_values( array_filter( $ips ) ),
+			'ranges' => array_values( array_filter( $ranges ) ),
+		);
+	}
+
+	/**
 	 * Fetch feeds, parse, and push indicators to Cloudflare.
 	 *
 	 * @return array Stored status payload.
@@ -157,36 +247,82 @@ class Blt_Secure_Ioc implements Blt_Secure_Module {
 			return $this->store( array( 'status' => 'no_feeds' ) );
 		}
 
-		$ips        = array();
-		$per_feed   = array();
-		$feed_error = '';
+		$fetched = array();
 		foreach ( $feeds as $feed ) {
+			$item = array(
+				'id'     => $feed['id'],
+				'format' => $feed['format'],
+				'code'   => 0,
+				'body'   => '',
+				'error'  => '',
+			);
+			if ( 0 !== stripos( $feed['url'], 'https://' ) ) {
+				$item['error'] = 'feed URL is not https';
+				$fetched[]     = $item;
+				continue;
+			}
 			$response = wp_remote_get(
 				$feed['url'],
 				array(
-					'timeout'    => 25,
-					'user-agent' => 'BLT-Secure-IOC/' . BLT_SECURE_VERSION,
+					'timeout'             => 25,
+					'redirection'         => 2,
+					'limit_response_size' => 8 * 1024 * 1024,
+					'user-agent'          => 'BLT-Secure-IOC/' . BLT_SECURE_VERSION,
 				)
 			);
 			if ( is_wp_error( $response ) ) {
-				$feed_error = $response->get_error_message();
-				continue;
+				$item['error'] = $response->get_error_message();
+			} else {
+				$item['code'] = (int) wp_remote_retrieve_response_code( $response );
+				$item['body'] = wp_remote_retrieve_body( $response );
 			}
-			$parsed                  = Blt_Secure_Ioc_Parser::parse( $feed['format'], wp_remote_retrieve_body( $response ) );
-			$per_feed[ $feed['id'] ] = count( $parsed );
-			$ips                     = array_merge( $ips, $parsed );
+			$fetched[] = $item;
 		}
 
-		$ips = array_values( array_unique( $ips ) );
-		if ( count( $ips ) > self::MAX_IPS ) {
-			$ips = array_slice( $ips, 0, self::MAX_IPS );
+		$collected = self::collect( $fetched );
+
+		// Never REPLACE the Cloudflare list from a partial picture: one failed
+		// feed would silently shrink the blocklist.
+		if ( ! empty( $collected['failed'] ) ) {
+			$parts = array();
+			foreach ( $collected['failed'] as $id => $reason ) {
+				$parts[] = $id . ': ' . $reason;
+			}
+			return $this->store(
+				array(
+					'status' => 'error',
+					'error'  => sprintf(
+						/* translators: %s: failed feeds and reasons */
+						__( 'A threat-intel feed failed (%s), so the Cloudflare list was left unchanged.', 'blt-secure' ),
+						implode( '; ', $parts )
+					),
+				)
+			);
 		}
+
+		$ips = $collected['ips'];
+
+		// Drop anything that would block this server, the admin or Cloudflare's edge.
+		$protected = $this->protected_targets();
+		$before    = count( $ips );
+		$ips       = Blt_Secure_Ioc_Parser::drop_protected( $ips, $protected['ips'], $protected['ranges'] );
+		$dropped   = $before - count( $ips );
+
+		/**
+		 * Filter the maximum number of indicators pushed to Cloudflare. The
+		 * item quota is shared by every custom list in the account.
+		 *
+		 * @param int $max Maximum items.
+		 */
+		$max       = max( 1, (int) apply_filters( 'blt_secure_ioc_max_items', self::MAX_IPS ) );
+		$truncated = count( $ips ) > $max;
+		$ips       = Blt_Secure_Ioc_Parser::prioritize_for_cap( $ips, $max );
 
 		if ( empty( $ips ) ) {
 			return $this->store(
 				array(
 					'status' => 'empty',
-					'error'  => $feed_error,
+					'error'  => '',
 				)
 			);
 		}
@@ -198,7 +334,8 @@ class Blt_Secure_Ioc implements Blt_Secure_Module {
 
 		$deployer = new Blt_Secure_Cloudflare_Deployer(
 			new Blt_Secure_Cloudflare_Api( $token ),
-			new Blt_Secure_Cloudflare_State()
+			new Blt_Secure_Cloudflare_State(),
+			(string) wp_parse_url( home_url(), PHP_URL_HOST )
 		);
 		$result   = $deployer->sync_ioc_list( $ips );
 
@@ -220,13 +357,16 @@ class Blt_Secure_Ioc implements Blt_Secure_Module {
 		}
 
 		// Record what this refresh changed relative to the last one.
-		( new Blt_Secure_Feed_Changelog() )->record( $ips, $per_feed, $this->alerting );
+		( new Blt_Secure_Feed_Changelog() )->record( $ips, $collected['per_feed'], $this->alerting );
 
 		return $this->store(
 			array(
-				'status'   => 'ok',
-				'count'    => count( $ips ),
-				'per_feed' => $per_feed,
+				'status'    => 'ok',
+				'count'     => count( $ips ),
+				'per_feed'  => $collected['per_feed'],
+				'dropped'   => $dropped,
+				'truncated' => $truncated,
+				'pending'   => ! empty( $result['list_pending'] ),
 			)
 		);
 	}

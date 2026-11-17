@@ -261,6 +261,8 @@ class Blt_Secure_Admin {
 					'deployAllDone' => __( 'All protections deployed.', 'blt-secure' ),
 					/* translators: %s: number of failed cards */
 					'deployAllFail' => __( '%s card(s) failed — see the message on each card.', 'blt-secure' ),
+					/* translators: %s: number of skipped cards */
+					'deployAllSkip' => __( 'Deployed what fits your plan; %s card(s) were skipped — see the reason on each card.', 'blt-secure' ),
 				),
 			)
 		);
@@ -278,7 +280,7 @@ class Blt_Secure_Admin {
 		printf(
 			'<div class="notice notice-error"><p><strong>%s</strong> %s <a href="%s">%s</a></p></div>',
 			esc_html__( 'BLT Secure:', 'blt-secure' ),
-			esc_html__( 'the WordPress security keys changed, so the stored credentials (Cloudflare token, GitHub updates token, Slack webhook) could not be decrypted and were removed. Those features are paused until you re-enter them.', 'blt-secure' ),
+			esc_html__( 'the WordPress security keys changed, so the stored credentials (Cloudflare token, GitHub updates token, Slack webhook, fleet enrollment token) could not be decrypted and were removed. Those features are paused until you re-enter them. This notice stays until you store a credential again.', 'blt-secure' ),
 			esc_url( self::tab_url( 'cloudflare' ) ),
 			esc_html__( 'Re-enter tokens', 'blt-secure' )
 		);
@@ -371,30 +373,38 @@ class Blt_Secure_Admin {
 	 * @return array[]
 	 */
 	public function cf_cards() {
+		$zone = $this->cf_state->zone();
+		$plan = Blt_Secure_Rule_Definitions::normalize_plan( isset( $zone['plan'] ) ? $zone['plan'] : '' );
+		$paid = in_array( $plan, array( 'pro', 'business', 'enterprise' ), true );
+
 		return array(
 			'waf_managed'   => array(
 				'title' => __( 'Managed WAF rules', 'blt-secure' ),
-				'desc'  => __( 'Cloudflare Managed Ruleset with the WordPress category emphasized, plus the OWASP Core Ruleset at paranoia level 2. Free-plan zones automatically get the Free Managed Ruleset instead.', 'blt-secure' ),
+				'desc'  => __( 'Cloudflare Managed Ruleset with the WordPress category emphasized, plus the OWASP Core Ruleset at paranoia level 2 (Pro plan or higher). Free-plan zones get the Free Managed Ruleset instead; the tier is chosen from your zone\'s plan.', 'blt-secure' ),
 			),
 			'custom_pack'   => array(
 				'title' => __( 'Custom rules pack', 'blt-secure' ),
-				'desc'  => __( 'Challenge high-abuse hosting ASNs and TOR exits; block wp-config / .env / .git probes outright.', 'blt-secure' ),
+				'desc'  => __( 'Challenge high-abuse hosting ASNs and TOR exits (REST API, WP-Cron and XML-RPC are exempt so webhooks and loopbacks keep working); block wp-config / .env / .git probes outright. Uses 2 of your custom rules.', 'blt-secure' ),
 			),
 			'country_block' => array(
 				'title' => __( 'Country blocking', 'blt-secure' ),
-				'desc'  => __( 'Block traffic from the countries you list, enforced at the Cloudflare edge before it reaches your server. Use the login-only mode to keep the site readable worldwide while stopping sign-ins — and be careful with full-site blocking if you rely on crawlers or customers from those regions.', 'blt-secure' ),
+				'desc'  => __( 'Block traffic from the countries you list, enforced at the Cloudflare edge before it reaches your server. Use the login-only mode to keep the site readable worldwide while stopping sign-ins — and be careful with full-site blocking if you rely on crawlers or customers from those regions. Uses 1 custom rule.', 'blt-secure' ),
 			),
 			'rate_limit'    => array(
 				'title' => __( 'Login rate limiting', 'blt-secure' ),
-				'desc'  => __( '5 requests per minute per IP on wp-login.php, xmlrpc.php, and your custom login slug; violators blocked for 10 minutes at the edge.', 'blt-secure' ),
+				'desc'  => $paid
+					? __( '5 requests per minute per IP on wp-login.php, xmlrpc.php, and your custom login slug; violators blocked for 10 minutes at the edge.', 'blt-secure' )
+					: __( 'Free-plan limits apply: 5 requests per 10 seconds per IP on wp-login.php, xmlrpc.php, and your custom login slug; violators blocked for 10 seconds at the edge (Cloudflare Free only allows 10-second windows). Pro and higher get 5 per minute with a 10-minute block.', 'blt-secure' ),
 			),
 			'leaked_creds'  => array(
 				'title' => __( 'Leaked-credential check', 'blt-secure' ),
-				'desc'  => __( 'Detects logins using breached username/password pairs on the WordPress login form and challenges them before they reach PHP.', 'blt-secure' ),
+				'desc'  => $paid
+					? __( 'Cloudflare\'s default leaked-credential detection (it already understands the WordPress login form) challenges logins whose username/password pair appears in a breach. Enterprise zones also get a custom detection on the log/pwd fields. Uses 1 custom rule.', 'blt-secure' )
+					: __( 'Free plans check the password only (the username-and-password check needs Pro or higher, custom form detection needs Enterprise); matching logins get a challenge before they reach PHP. Uses 1 custom rule.', 'blt-secure' ),
 			),
 			'access'        => array(
 				'title' => __( 'Cloudflare Access (Zero Trust)', 'blt-secure' ),
-				'desc'  => __( 'Puts wp-admin and your login URL behind Cloudflare Access with an email allow-list. An admin-ajax.php bypass is created automatically so front-end features keep working. Requires the token to also carry Account → Access: Apps and Policies: Edit.', 'blt-secure' ),
+				'desc'  => __( 'Puts wp-admin and your login URL behind Cloudflare Access with an email allow-list (the site admin email). An admin-ajax.php / admin-post.php bypass is created automatically so front-end features keep working. Requires the token to also carry Account → Access: Apps and Policies: Edit; the scope is checked before anything is created.', 'blt-secure' ),
 			),
 		);
 	}
@@ -402,6 +412,36 @@ class Blt_Secure_Admin {
 	// -------------------------------------------------------------------
 	// AJAX.
 	// -------------------------------------------------------------------
+
+	/**
+	 * Normalize a pasted secret (API token, enrollment token): trimmed, one
+	 * run of printable ASCII, no whitespace. sanitize_text_field() is wrong for
+	 * secrets — it strips tag-like runs and %xx sequences and so silently
+	 * corrupts a valid value.
+	 *
+	 * Pure function (unit-tested).
+	 *
+	 * @param mixed $raw Raw (already unslashed) value.
+	 * @return string The secret, or '' when absent or malformed.
+	 */
+	public static function normalize_secret( $raw ) {
+		if ( ! is_string( $raw ) ) {
+			return '';
+		}
+		$raw = trim( $raw );
+		return 1 === preg_match( '/^[\x21-\x7E]{8,512}$/', $raw ) ? $raw : '';
+	}
+
+	/**
+	 * Read a pasted secret from the (already nonce-checked) POST body.
+	 *
+	 * @param string $field POST field name.
+	 * @return string
+	 */
+	private static function posted_secret( $field ) {
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- guard() ran check_ajax_referer; normalize_secret() validates.
+		return isset( $_POST[ $field ] ) ? self::normalize_secret( wp_unslash( $_POST[ $field ] ) ) : '';
+	}
 
 	/**
 	 * Shared AJAX guard.
@@ -425,7 +465,16 @@ class Blt_Secure_Admin {
 		if ( '' === $token ) {
 			return new WP_Error( 'blt_cf_no_token', __( 'No Cloudflare token is configured.', 'blt-secure' ) );
 		}
-		return new Blt_Secure_Cloudflare_Deployer( new Blt_Secure_Cloudflare_Api( $token ), $this->cf_state );
+		return new Blt_Secure_Cloudflare_Deployer( new Blt_Secure_Cloudflare_Api( $token ), $this->cf_state, $this->site_host() );
+	}
+
+	/**
+	 * This site's host, for the zone-drift guard.
+	 *
+	 * @return string
+	 */
+	private function site_host() {
+		return strtolower( (string) wp_parse_url( home_url(), PHP_URL_HOST ) );
 	}
 
 	/**
@@ -436,9 +485,9 @@ class Blt_Secure_Admin {
 	public function ajax_save_token() {
 		$this->guard();
 
-		$token = isset( $_POST['token'] ) ? sanitize_text_field( wp_unslash( $_POST['token'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Missing -- guard() ran check_ajax_referer.
+		$token = self::posted_secret( 'token' );
 		if ( '' === $token ) {
-			wp_send_json_error( array( 'message' => __( 'Token is empty.', 'blt-secure' ) ) );
+			wp_send_json_error( array( 'message' => __( 'Token is empty or not in a valid format.', 'blt-secure' ) ) );
 		}
 
 		if ( ! $this->plugin->credentials->is_available() ) {
@@ -447,16 +496,19 @@ class Blt_Secure_Admin {
 
 		$deployer = new Blt_Secure_Cloudflare_Deployer( new Blt_Secure_Cloudflare_Api( $token ), $this->cf_state );
 		$host     = (string) wp_parse_url( home_url(), PHP_URL_HOST );
-		$zone     = $deployer->connect( $host );
+		$zone     = $deployer->connect( $host, false ); // Verify + discover only; nothing is persisted yet.
 
 		if ( is_wp_error( $zone ) ) {
 			wp_send_json_error( array( 'message' => $zone->get_error_message() ) );
 		}
 
+		// Store the token FIRST so a failed write never leaves a zone identity
+		// (and Deploy buttons) without a token behind it.
 		$stored = $this->plugin->credentials->set( 'cf_token', $token );
 		if ( is_wp_error( $stored ) ) {
 			wp_send_json_error( array( 'message' => $stored->get_error_message() ) );
 		}
+		$this->cf_state->set_zone( $zone );
 
 		wp_send_json_success(
 			array(
@@ -505,14 +557,16 @@ class Blt_Secure_Admin {
 
 		$config = array(
 			'login_slug' => (string) $this->plugin->options->get( 'login', 'slug', '' ),
+			'base_path'  => (string) wp_parse_url( home_url(), PHP_URL_PATH ),
 			'emails'     => array( get_option( 'admin_email' ) ),
 		);
 		// phpcs:disable WordPress.Security.NonceVerification.Missing -- guard() ran check_ajax_referer.
 		if ( isset( $_POST['paranoia'] ) ) {
-			$config['paranoia'] = absint( wp_unslash( $_POST['paranoia'] ) );
+			$config['paranoia'] = max( 1, min( 4, absint( wp_unslash( $_POST['paranoia'] ) ) ) );
 		}
 		if ( isset( $_POST['score_threshold'] ) ) {
-			$config['score_threshold'] = absint( wp_unslash( $_POST['score_threshold'] ) );
+			$threshold                 = absint( wp_unslash( $_POST['score_threshold'] ) );
+			$config['score_threshold'] = in_array( $threshold, array( 25, 40, 60 ), true ) ? $threshold : 40;
 		}
 		if ( isset( $_POST['countries'] ) ) {
 			$config['countries'] = Blt_Secure_Rule_Definitions::sanitize_country_codes(
@@ -536,12 +590,19 @@ class Blt_Secure_Admin {
 			if ( 'blt_cf_scope' === $result->get_error_code() ) {
 				$hint = ' ' . __( 'Your token is missing a permission — edit it at dash.cloudflare.com → My Profile → API Tokens and add the permission named in the card description, then retry.', 'blt-secure' );
 			}
-			wp_send_json_error( array( 'message' => $result->get_error_message() . $hint ) );
+			// A budget refusal is a deliberate skip (nothing was changed), which
+			// "Deploy all" reports separately from a failure.
+			wp_send_json_error(
+				array(
+					'message' => $result->get_error_message() . $hint,
+					'skipped' => 'blt_cf_budget' === $result->get_error_code(),
+				)
+			);
 		}
 
 		wp_send_json_success(
 			array(
-				'message' => __( 'Deployed.', 'blt-secure' ),
+				'message' => trim( __( 'Deployed.', 'blt-secure' ) . ' ' . implode( ' ', $deployer->notes() ) ),
 				'record'  => $result,
 			)
 		);
@@ -555,10 +616,9 @@ class Blt_Secure_Admin {
 	public function ajax_gh_save_token() {
 		$this->guard();
 
-		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- guard() ran check_ajax_referer.
-		$token = isset( $_POST['token'] ) ? sanitize_text_field( wp_unslash( $_POST['token'] ) ) : '';
+		$token = self::posted_secret( 'token' );
 		if ( '' === $token ) {
-			wp_send_json_error( array( 'message' => __( 'Token is empty.', 'blt-secure' ) ) );
+			wp_send_json_error( array( 'message' => __( 'Token is empty or not in a valid format.', 'blt-secure' ) ) );
 		}
 
 		if ( ! $this->plugin->credentials->is_available() ) {
@@ -579,7 +639,7 @@ class Blt_Secure_Admin {
 		);
 
 		if ( is_wp_error( $response ) ) {
-			wp_send_json_error( array( 'message' => $response->get_error_message() ) );
+			wp_send_json_error( array( 'message' => __( 'Could not reach GitHub to verify the token. Try again in a moment.', 'blt-secure' ) ) );
 		}
 		$status = (int) wp_remote_retrieve_response_code( $response );
 		if ( 200 !== $status ) {
@@ -624,30 +684,29 @@ class Blt_Secure_Admin {
 	public function ajax_slack_save() {
 		$this->guard();
 
-		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- guard() ran check_ajax_referer.
-		$webhook = isset( $_POST['webhook'] ) ? esc_url_raw( wp_unslash( $_POST['webhook'] ) ) : '';
-		if ( '' === $webhook || 0 !== strpos( $webhook, 'https://' ) ) {
-			wp_send_json_error( array( 'message' => __( 'Enter a valid https Slack webhook URL.', 'blt-secure' ) ) );
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- guard() ran check_ajax_referer; the URL is validated below.
+		$webhook = isset( $_POST['webhook'] ) && is_string( $_POST['webhook'] ) ? esc_url_raw( trim( wp_unslash( $_POST['webhook'] ) ), array( 'https' ) ) : '';
+		if ( '' === $webhook || ! Blt_Secure_Alert_Channels::is_allowed_webhook( $webhook ) ) {
+			wp_send_json_error( array( 'message' => __( 'Enter a Slack incoming-webhook URL (https://hooks.slack.com/services/…).', 'blt-secure' ) ) );
 		}
 
 		if ( ! $this->plugin->credentials->is_available() ) {
 			wp_send_json_error( array( 'message' => __( 'This server has no authenticated-encryption support; the webhook cannot be stored safely and was NOT saved.', 'blt-secure' ) ) );
 		}
 
-		// Prove the webhook works before storing it.
-		$test = wp_remote_post(
+		// Prove the webhook works before storing it. wp_safe_remote_post()
+		// refuses internal addresses; the raw transport error is never shown.
+		$test = wp_safe_remote_post(
 			$webhook,
 			array(
-				'timeout' => 10,
-				'headers' => array( 'Content-Type' => 'application/json' ),
-				'body'    => wp_json_encode( Blt_Secure_Alert_Channels::slack_payload( __( 'BLT Secure: Slack alerts are now connected.', 'blt-secure' ) ) ),
+				'timeout'     => 10,
+				'redirection' => 0,
+				'headers'     => array( 'Content-Type' => 'application/json' ),
+				'body'        => wp_json_encode( Blt_Secure_Alert_Channels::slack_payload( __( 'BLT Secure: Slack alerts are now connected.', 'blt-secure' ) ) ),
 			)
 		);
-		if ( is_wp_error( $test ) ) {
-			wp_send_json_error( array( 'message' => $test->get_error_message() ) );
-		}
-		if ( 200 !== (int) wp_remote_retrieve_response_code( $test ) ) {
-			wp_send_json_error( array( 'message' => __( 'Slack rejected the webhook. Double-check the URL.', 'blt-secure' ) ) );
+		if ( is_wp_error( $test ) || 200 !== (int) wp_remote_retrieve_response_code( $test ) ) {
+			wp_send_json_error( array( 'message' => __( 'Slack did not accept the webhook. Double-check the URL.', 'blt-secure' ) ) );
 		}
 
 		$stored = $this->plugin->credentials->set( 'slack_webhook', $webhook );
@@ -679,10 +738,9 @@ class Blt_Secure_Admin {
 	public function ajax_fleet_save() {
 		$this->guard();
 
-		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- guard() ran check_ajax_referer.
-		$token = isset( $_POST['token'] ) ? sanitize_text_field( wp_unslash( $_POST['token'] ) ) : '';
+		$token = self::posted_secret( 'token' );
 		if ( '' === $token ) {
-			wp_send_json_error( array( 'message' => __( 'Enrollment token is empty.', 'blt-secure' ) ) );
+			wp_send_json_error( array( 'message' => __( 'Enrollment token is empty or not in a valid format.', 'blt-secure' ) ) );
 		}
 		if ( ! $this->plugin->credentials->is_available() ) {
 			wp_send_json_error( array( 'message' => __( 'This server has no authenticated-encryption support; the token cannot be stored safely and was NOT saved.', 'blt-secure' ) ) );
@@ -726,9 +784,11 @@ class Blt_Secure_Admin {
 			wp_send_json_success( array( 'message' => __( 'Report sent to the dashboard.', 'blt-secure' ) ) );
 		}
 
+		// The transport error text stays server-side (in the stored status); the
+		// browser only gets a fixed message.
 		$message = 'not_configured' === $result['status']
-			? __( 'Set the dashboard endpoint (and enable + save) and store an enrollment token first.', 'blt-secure' )
-			: ( isset( $result['error'] ) ? $result['error'] : __( 'The report could not be sent.', 'blt-secure' ) );
+			? __( 'Set the dashboard endpoint (an https:// URL), enable + save, and store an enrollment token first.', 'blt-secure' )
+			: __( 'The report could not be sent. Check that the endpoint is a reachable https:// URL and the enrollment token is current.', 'blt-secure' );
 		wp_send_json_error( array( 'message' => $message ) );
 	}
 
@@ -740,27 +800,54 @@ class Blt_Secure_Admin {
 	public function ajax_whitelist_add() {
 		$this->guard();
 
-		// phpcs:disable WordPress.Security.NonceVerification.Missing -- guard() ran check_ajax_referer.
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- guard() ran check_ajax_referer.
 		$fingerprint = isset( $_POST['fingerprint'] ) ? sanitize_text_field( wp_unslash( $_POST['fingerprint'] ) ) : '';
-		$scanner     = isset( $_POST['scanner'] ) ? sanitize_key( wp_unslash( $_POST['scanner'] ) ) : '';
-		$label       = isset( $_POST['label'] ) ? sanitize_text_field( wp_unslash( $_POST['label'] ) ) : '';
-		// phpcs:enable WordPress.Security.NonceVerification.Missing
 
-		if ( ! Blt_Secure_Scan_Whitelist::is_valid_fingerprint( $fingerprint ) ) {
-			wp_send_json_error( array( 'message' => __( 'Invalid finding reference.', 'blt-secure' ) ) );
+		// Only a finding a scanner actually stored can be ignored, and the scanner and label come
+		// from that stored finding, not from the request.
+		$stored = Blt_Secure_Scan_Whitelist::locate(
+			$fingerprint,
+			array(
+				'core'     => $this->stored_findings( Blt_Secure_Scanner::RESULTS_OPTION, 'issues' ),
+				'malware'  => $this->stored_findings( Blt_Secure_Malware::RESULTS_OPTION, 'findings' ),
+				'baseline' => $this->stored_findings( Blt_Secure_Baseline::RESULTS_OPTION, 'findings' ),
+			)
+		);
+		if ( null === $stored ) {
+			wp_send_json_error( array( 'message' => __( 'That finding is no longer in the latest scan results. Run the scan again.', 'blt-secure' ) ) );
+		}
+
+		$finding = $stored['finding'];
+		foreach ( array( 'label', 'path', 'key' ) as $field ) {
+			if ( ! empty( $finding[ $field ] ) && is_string( $finding[ $field ] ) ) {
+				$label = sanitize_text_field( $finding[ $field ] );
+				break;
+			}
 		}
 
 		$this->plugin->whitelist->add(
 			$fingerprint,
 			array(
-				'scanner' => $scanner,
-				'label'   => $label,
+				'scanner' => $stored['scanner'],
+				'label'   => isset( $label ) ? $label : '',
 				'time'    => time(),
 				'user'    => get_current_user_id(),
 			)
 		);
 
 		wp_send_json_success( array( 'message' => __( 'Finding ignored.', 'blt-secure' ) ) );
+	}
+
+	/**
+	 * A scanner's stored finding list, or an empty array.
+	 *
+	 * @param string $option Results option name.
+	 * @param string $key    Findings key inside the payload.
+	 * @return array
+	 */
+	private function stored_findings( $option, $key ) {
+		$payload = get_option( $option, array() );
+		return is_array( $payload ) && isset( $payload[ $key ] ) && is_array( $payload[ $key ] ) ? $payload[ $key ] : array();
 	}
 
 	/**
@@ -805,6 +892,6 @@ class Blt_Secure_Admin {
 			wp_send_json_error( array( 'message' => $result->get_error_message() ) );
 		}
 
-		wp_send_json_success( array( 'message' => __( 'Removed.', 'blt-secure' ) ) );
+		wp_send_json_success( array( 'message' => trim( __( 'Removed.', 'blt-secure' ) . ' ' . implode( ' ', $deployer->notes() ) ) ) );
 	}
 }

@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { parseSnapshot } from '../src/snapshot.js';
 
 const valid = {
-	schema: 1,
+	schema: 2,
 	site: 'https://example.com',
 	name: 'Example',
 	reported_at: 1700000000,
@@ -38,7 +38,8 @@ test( 'rejects non-objects', () => {
 } );
 
 test( 'rejects an unsupported schema', () => {
-	assert.equal( parseSnapshot( { ...valid, schema: 2 } ).ok, false );
+	assert.equal( parseSnapshot( { ...valid, schema: 1 } ).ok, false ); // v1 plugins are rejected: no backward compat.
+	assert.equal( parseSnapshot( { ...valid, schema: 3 } ).ok, false );
 } );
 
 test( 'rejects a non-http site', () => {
@@ -59,10 +60,24 @@ test( 'coerces junk counts to non-negative ints and whitelists events', () => {
 } );
 
 test( 'defaults missing sections to safe values', () => {
-	const r = parseSnapshot( { schema: 1, site: 'https://x.test' } );
+	const r = parseSnapshot( { schema: 2, site: 'https://x.test' } );
 	assert.equal( r.ok, true );
 	assert.equal( r.value.core.status, 'none' );
 	assert.equal( r.value.health.score, null );
 	assert.equal( r.value.cloudflare.connected, false );
 	assert.deepEqual( r.value.events, {} );
+} );
+
+test( 'event keys are slug-only, capped in number, and values bounded', () => {
+	const many = {};
+	for ( let i = 0; i < 40; i++ ) {
+		many[ 'type_' + i ] = 1;
+	}
+	const r = parseSnapshot( { ...valid, events: { ...many, 'Bad Key!': 5, '__proto__': 9, big: 10 ** 12 } } );
+	assert.equal( r.ok, true );
+	assert.ok( Object.keys( r.value.events ).length <= 16 );
+	assert.equal( 'Bad Key!' in r.value.events, false );
+	assert.equal( Object.getPrototypeOf( r.value.events ), Object.prototype );
+	const big = parseSnapshot( { ...valid, events: { big: 10 ** 12 } } );
+	assert.equal( big.value.events.big, 100000 );
 } );

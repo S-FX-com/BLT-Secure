@@ -153,17 +153,53 @@ final class Blt_Secure {
 
 		$this->ip_resolver->boot();
 
+		// Local, read-only findings surface for BLT Connect (the Buoy fleet agent). One
+		// add_filter, no I/O, and registered here rather than in a module so a disabled
+		// module cannot take it away. BLT Connect is the only transport to Buoy.
+		( new Blt_Secure_Buoy_Bridge( $this->whitelist ) )->boot();
+
 		if ( Blt_Secure_Updater::should_load() ) {
 			$this->updater = new Blt_Secure_Updater( $this->credentials );
 			$this->updater->boot();
 		}
 
-		if ( is_admin() ) {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Only picks which classes to load; every handler verifies its own nonce.
+		$action = isset( $_REQUEST['action'] ) && is_string( $_REQUEST['action'] ) ? sanitize_key( wp_unslash( $_REQUEST['action'] ) ) : '';
+		$page   = isset( $GLOBALS['pagenow'] ) ? (string) $GLOBALS['pagenow'] : '';
+		if ( self::should_load_admin( is_admin(), wp_doing_ajax(), $action, $page ) ) {
 			require_once BLT_SECURE_DIR . 'admin/class-admin.php';
 			new Blt_Secure_Admin( $this );
 		}
 
 		add_action( 'init', array( $this, 'load_textdomain' ) );
+	}
+
+	/**
+	 * Whether the admin UI class (and the Cloudflare classes it requires)
+	 * should be loaded for this request.
+	 *
+	 * is_admin() is also true for anonymous admin-ajax.php / admin-post.php
+	 * front-end requests, which would otherwise pay for the whole admin stack.
+	 * AJAX is loaded only for this plugin's own actions; admin-post.php never
+	 * (nothing here uses it). Every other wp-admin page still loads it, which
+	 * keeps the Settings API sanitizer registered on options.php POSTs.
+	 *
+	 * Pure function (unit-tested).
+	 *
+	 * @param bool   $is_admin   is_admin().
+	 * @param bool   $doing_ajax wp_doing_ajax().
+	 * @param string $action     Sanitized $_REQUEST['action'].
+	 * @param string $pagenow    Current admin script.
+	 * @return bool
+	 */
+	public static function should_load_admin( $is_admin, $doing_ajax, $action, $pagenow ) {
+		if ( ! $is_admin ) {
+			return false;
+		}
+		if ( $doing_ajax ) {
+			return 0 === strpos( (string) $action, 'blt_secure_' );
+		}
+		return 'admin-post.php' !== $pagenow;
 	}
 
 	/**
@@ -224,6 +260,8 @@ final class Blt_Secure {
 		wp_clear_scheduled_hook( Blt_Secure_Timeline::CRON_HOOK );
 		wp_clear_scheduled_hook( Blt_Secure_Fleet::CRON_HOOK );
 		wp_clear_scheduled_hook( Blt_Secure_Fleet::PULL_HOOK );
+		wp_clear_scheduled_hook( Blt_Secure_Fleet::PUSH_HOOK );
+		wp_unschedule_hook( Blt_Secure_Alert_Channels::DELIVER_HOOK ); // Queued deliveries carry args, which wp_clear_scheduled_hook() would skip.
 		flush_rewrite_rules();
 	}
 }

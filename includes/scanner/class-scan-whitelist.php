@@ -150,6 +150,40 @@ class Blt_Secure_Scan_Whitelist {
 	}
 
 	/**
+	 * Find the stored finding a fingerprint refers to.
+	 *
+	 * "Ignore" must only ever act on a finding a scanner actually produced: accepting any
+	 * well-formed 40-hex string lets the whitelist be pre-filled with fingerprints of
+	 * findings that do not exist yet (and the 1000-entry cap would then evict real ones).
+	 * The scanner is taken from where the finding was found, never from the request.
+	 *
+	 * Pure function (unit-tested).
+	 *
+	 * @param string                         $fingerprint Finding fingerprint.
+	 * @param array<string,array<int,mixed>> $sources     Scanner id => stored findings list.
+	 * @return array{scanner:string,finding:array}|null
+	 */
+	public static function locate( $fingerprint, array $sources ) {
+		if ( ! self::is_valid_fingerprint( $fingerprint ) ) {
+			return null;
+		}
+		foreach ( $sources as $scanner => $findings ) {
+			if ( ! is_array( $findings ) ) {
+				continue;
+			}
+			foreach ( $findings as $finding ) {
+				if ( is_array( $finding ) && isset( $finding['fingerprint'] ) && hash_equals( (string) $finding['fingerprint'], (string) $fingerprint ) ) {
+					return array(
+						'scanner' => (string) $scanner,
+						'finding' => $finding,
+					);
+				}
+			}
+		}
+		return null;
+	}
+
+	/**
 	 * Findings that ARE whitelisted.
 	 *
 	 * @param array[] $findings Findings, each optionally carrying 'fingerprint'.

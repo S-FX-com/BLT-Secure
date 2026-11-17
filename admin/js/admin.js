@@ -528,6 +528,11 @@
 				}
 				return true;
 			}
+			if ( json.data && json.data.skipped ) {
+				// Plan-budget refusal: nothing was changed; explain, don't alarm.
+				setMessage( message, json.data.message, false );
+				return 'skipped';
+			}
 			setMessage( message, json.data.message, true );
 			return false;
 		} ).catch( function () {
@@ -539,7 +544,7 @@
 		} );
 	}
 
-	document.querySelectorAll( '.blt-card' ).forEach( function ( card ) {
+	document.querySelectorAll( '.blt-card[data-feature]' ).forEach( function ( card ) {
 		var deployBtn = card.querySelector( '.blt-deploy' );
 		if ( deployBtn ) {
 			deployBtn.addEventListener( 'click', function () {
@@ -564,7 +569,7 @@
 	if ( deployAllBtn ) {
 		deployAllBtn.addEventListener( 'click', function () {
 			var status = document.getElementById( 'blt-cf-deploy-all-status' );
-			var queue = Array.prototype.slice.call( document.querySelectorAll( '.blt-card' ) ).filter( function ( card ) {
+			var queue = Array.prototype.slice.call( document.querySelectorAll( '.blt-card[data-feature]' ) ).filter( function ( card ) {
 				var feature = card.getAttribute( 'data-feature' );
 				if ( 'access' === feature ) {
 					return false;
@@ -582,10 +587,11 @@
 			} );
 			var total = queue.length;
 			var failures = 0;
+			var skipped = 0;
 
 			deployAllBtn.disabled = true;
 			var locked = [];
-			document.querySelectorAll( '.blt-card button' ).forEach( function ( b ) {
+			document.querySelectorAll( '.blt-card[data-feature] button' ).forEach( function ( b ) {
 				if ( ! b.disabled ) {
 					b.disabled = true;
 					locked.push( b );
@@ -600,6 +606,8 @@
 					deployAllBtn.disabled = false;
 					if ( failures ) {
 						setMessage( status, cfg.i18n.deployAllFail.replace( '%s', String( failures ) ), true );
+					} else if ( skipped ) {
+						setMessage( status, cfg.i18n.deployAllSkip.replace( '%s', String( skipped ) ), false );
 					} else {
 						setMessage( status, cfg.i18n.deployAllDone, false );
 					}
@@ -608,7 +616,9 @@
 				setMessage( status, cfg.i18n.deployAllStep.replace( '%1$s', String( total - queue.length + 1 ) ).replace( '%2$s', String( total ) ), false );
 				var card = queue.shift();
 				runCard( card, 'blt_secure_cf_deploy', cardExtra( card ) ).then( function ( ok ) {
-					if ( ! ok ) {
+					if ( 'skipped' === ok ) {
+						skipped++;
+					} else if ( ! ok ) {
 						failures++;
 					}
 					next();

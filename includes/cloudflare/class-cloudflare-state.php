@@ -34,6 +34,19 @@ class Blt_Secure_Cloudflare_State {
 	}
 
 	/**
+	 * The host this site's own zone discovery stored — never the shared-store gap-fill that
+	 * zone() applies. The host-drift guard must compare against what THIS site connected for:
+	 * the shared `zone_host` can belong to another plugin (an agency zone) and would make
+	 * every mutation look like a mismatch.
+	 *
+	 * @return string Lower-case host, or '' when none was stored (records from older versions).
+	 */
+	public function stored_zone_host() {
+		$state = $this->all();
+		return isset( $state['zone']['host'] ) ? strtolower( trim( (string) $state['zone']['host'] ) ) : '';
+	}
+
+	/**
 	 * Zone identity (zone_id, account_id, plan, host).
 	 *
 	 * The account id and host may be borrowed from the shared BLT family
@@ -87,8 +100,36 @@ class Blt_Secure_Cloudflare_State {
 	 * @return void
 	 */
 	public function set_zone( array $zone ) {
-		$state         = $this->all();
+		$state = $this->all();
+
+		// Deployment records hold ruleset/rule/app ids that belong to ONE zone.
+		// Moving to a different zone (or account) orphans them, and a later
+		// Remove would aim old ids at the new zone, so forget them now. Rules
+		// still carry their blt-secure-* refs and are re-adopted on redeploy.
+		$old_zone_id = isset( $state['zone']['zone_id'] ) ? (string) $state['zone']['zone_id'] : '';
+		$new_zone_id = isset( $zone['zone_id'] ) ? (string) $zone['zone_id'] : '';
+		if ( '' !== $old_zone_id && $old_zone_id !== $new_zone_id ) {
+			unset( $state['deployments'] );
+		}
+
 		$state['zone'] = $zone;
+		update_option( self::OPTION, $state, false );
+	}
+
+	/**
+	 * Refresh only the plan fields of the stored zone (zone/account/host are
+	 * untouched, deployments are preserved).
+	 *
+	 * @param string $plan Raw plan id/name from Cloudflare.
+	 * @return void
+	 */
+	public function update_plan( $plan ) {
+		$state = $this->all();
+		if ( empty( $state['zone']['zone_id'] ) ) {
+			return;
+		}
+		$state['zone']['plan']         = (string) $plan;
+		$state['zone']['plan_checked'] = time();
 		update_option( self::OPTION, $state, false );
 	}
 

@@ -79,6 +79,8 @@ class Blt_Secure_Privacy implements Blt_Secure_Module {
 			add_action( 'template_redirect', array( $this, 'block_author_query' ), 0 );
 			add_filter( 'redirect_canonical', array( $this, 'block_author_canonical' ), 10, 2 );
 			add_filter( 'rest_pre_dispatch', array( $this, 'block_rest_users' ), 10, 3 );
+			// wp-sitemap-users-N.xml lists every author archive URL (/author/<nicename>/).
+			add_filter( 'wp_sitemaps_add_provider', array( $this, 'remove_users_sitemap' ), 10, 2 );
 		}
 	}
 
@@ -129,11 +131,25 @@ class Blt_Secure_Privacy implements Blt_Secure_Module {
 			return;
 		}
 
-		// Only numeric probes — real author archive links keep working.
+		// Any ?author= probe, not just numeric ones: WP_Query strips the value
+		// to [0-9,-] itself, so "1,", "1abc" and (on PHP 7.4) "1%0A" all reach
+		// the archive of user 1 while failing is_numeric(). Pretty-permalink
+		// author URLs (/author/name/) carry no ?author= and keep working.
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended
-		if ( isset( $_GET['author'] ) && is_numeric( wp_unslash( $_GET['author'] ) ) ) {
+		if ( isset( $_GET['author'] ) ) {
 			$this->send_404();
 		}
+	}
+
+	/**
+	 * Drop the core users sitemap provider.
+	 *
+	 * @param object|false $provider Sitemap provider.
+	 * @param string       $name     Provider name.
+	 * @return object|false
+	 */
+	public function remove_users_sitemap( $provider, $name ) {
+		return 'users' === $name ? false : $provider;
 	}
 
 	/**
@@ -145,12 +161,12 @@ class Blt_Secure_Privacy implements Blt_Secure_Module {
 	 * @return string|false
 	 */
 	public function block_author_canonical( $redirect_url, $requested_url ) {
-		if ( is_user_logged_in() ) {
+		if ( is_user_logged_in() || ! is_author() ) {
 			return $redirect_url;
 		}
 
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended
-		if ( isset( $_GET['author'] ) && is_numeric( wp_unslash( $_GET['author'] ) ) ) {
+		if ( isset( $_GET['author'] ) ) {
 			$this->send_404();
 		}
 

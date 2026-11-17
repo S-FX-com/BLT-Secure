@@ -113,4 +113,93 @@ class Test_Crypto extends TestCase {
 		$this->assertSame( 'tok_456', $store_b->get( 'cf_token' ) );
 		$this->assertFalse( $store_b->is_invalidated() );
 	}
+
+	// ---------------------------------------------------------------------
+	// Salt-rotation hardening.
+	// ---------------------------------------------------------------------
+
+	public function test_known_keys_cover_every_credential_in_use() {
+		foreach ( array( 'cf_token', 'github_token', 'slack_webhook', 'fleet_token' ) as $key ) {
+			$this->assertContains( $key, Blt_Secure_Encrypted_Option_Store::known_keys() );
+		}
+		// Contract: every key any module reads from the store is wiped on rotation.
+		$used = array();
+		foreach ( array( 'includes', 'admin' ) as $dir ) {
+			$iterator = new RecursiveIteratorIterator( new RecursiveDirectoryIterator( BLT_SECURE_DIR . $dir, FilesystemIterator::SKIP_DOTS ) );
+			foreach ( $iterator as $file ) {
+				$path = $file->getPathname();
+				if ( '.php' !== substr( $path, -4 ) || false !== strpos( $path, '/lib/' ) || false !== strpos( $path, '/blt-family/' ) ) {
+					continue;
+				}
+				if ( preg_match_all( "/credentials->(?:get|set|delete)\\(\\s*'([a-z_]+)'/", (string) file_get_contents( $path ), $m ) ) {
+					$used = array_merge( $used, $m[1] );
+				}
+				if ( preg_match_all( "/const\\s+TOKEN_KEY\\s*=\\s*'([a-z_]+)'/", (string) file_get_contents( $path ), $c ) ) {
+					$used = array_merge( $used, $c[1] );
+				}
+			}
+		}
+		foreach ( array_unique( $used ) as $key ) {
+			$this->assertContains( $key, Blt_Secure_Encrypted_Option_Store::known_keys(), "credential '{$key}' is not wiped on salt rotation" );
+		}
+	}
+
+	public function test_rotation_wipes_fleet_and_slack_credentials_too() {
+		$a = new Blt_Secure_Encrypted_Option_Store( new Blt_Secure_Crypto( str_repeat( 'a', 32 ) ) );
+		foreach ( array( 'cf_token', 'github_token', 'slack_webhook', 'fleet_token' ) as $key ) {
+			$a->set( $key, 'value-' . $key );
+		}
+		$b = new Blt_Secure_Encrypted_Option_Store( new Blt_Secure_Crypto( str_repeat( 'b', 32 ) ) );
+		$this->assertNull( $b->get( 'cf_token' ) );
+
+		foreach ( array( 'cf_token', 'github_token', 'slack_webhook', 'fleet_token' ) as $key ) {
+			$this->assertArrayNotHasKey( 'blt_secure_cred_' . $key, $GLOBALS['blt_test_options'], "{$key} survived rotation" );
+		}
+	}
+
+	public function test_reentered_token_survives_later_reads_of_other_credentials() {
+		// The regression: stale fleet/slack rows used to wipe a re-entered CF token.
+		$a = new Blt_Secure_Encrypted_Option_Store( new Blt_Secure_Crypto( str_repeat( 'a', 32 ) ) );
+		$a->set( 'cf_token', 'CF_OLD' );
+		$a->set( 'fleet_token', 'FLEET_OLD' );
+		$a->set( 'slack_webhook', 'https://hooks.slack.com/x' );
+
+		$key_b = str_repeat( 'b', 32 );
+		( new Blt_Secure_Encrypted_Option_Store( new Blt_Secure_Crypto( $key_b ) ) )->get( 'cf_token' ); // Detects rotation.
+		( new Blt_Secure_Encrypted_Option_Store( new Blt_Secure_Crypto( $key_b ) ) )->set( 'cf_token', 'CF_NEW' );
+
+		$later = new Blt_Secure_Encrypted_Option_Store( new Blt_Secure_Crypto( $key_b ) );
+		$this->assertNull( $later->get( 'fleet_token' ) );
+		$this->assertNull( $later->get( 'slack_webhook' ) );
+		$this->assertSame( 'CF_NEW', ( new Blt_Secure_Encrypted_Option_Store( new Blt_Secure_Crypto( $key_b ) ) )->get( 'cf_token' ) );
+	}
+
+	public function test_a_single_corrupt_row_drops_only_that_row() {
+		$key   = str_repeat( 'a', 32 );
+		$store = new Blt_Secure_Encrypted_Option_Store( new Blt_Secure_Crypto( $key ) );
+		$store->set( 'cf_token', 'CF' );
+		$store->set( 'fleet_token', 'FLEET' );
+		$GLOBALS['blt_test_options']['blt_secure_cred_fleet_token'] = '$blt1$' . base64_encode( str_repeat( 'x', 60 ) );
+
+		$fresh = new Blt_Secure_Encrypted_Option_Store( new Blt_Secure_Crypto( $key ) );
+		$this->assertNull( $fresh->get( 'fleet_token' ) );
+		$this->assertSame( 'CF', $fresh->get( 'cf_token' ), 'a valid credential must not be collateral damage' );
+		$this->assertArrayNotHasKey( 'blt_secure_cred_fleet_token', $GLOBALS['blt_test_options'] );
+	}
+
+	public function test_invalid_flag_persists_across_requests_until_a_credential_is_stored() {
+		$a = new Blt_Secure_Encrypted_Option_Store( new Blt_Secure_Crypto( str_repeat( 'a', 32 ) ) );
+		$a->set( 'cf_token', 'CF' );
+		$key_b = str_repeat( 'b', 32 );
+		( new Blt_Secure_Encrypted_Option_Store( new Blt_Secure_Crypto( $key_b ) ) )->get( 'cf_token' ); // Cron request nobody saw.
+
+		// A later, separate request (fresh object) still reports it.
+		$admin_request = new Blt_Secure_Encrypted_Option_Store( new Blt_Secure_Crypto( $key_b ) );
+		$this->assertTrue( $admin_request->is_invalidated() );
+		$this->assertArrayHasKey( Blt_Secure_Encrypted_Option_Store::INVALID_FLAG_OPTION, $GLOBALS['blt_test_options'] );
+		$this->assertStringStartsNotWith( Blt_Secure_Encrypted_Option_Store::OPTION_PREFIX, Blt_Secure_Encrypted_Option_Store::INVALID_FLAG_OPTION, 'must never look like a credential row' );
+
+		$admin_request->set( 'cf_token', 'CF2' );
+		$this->assertFalse( ( new Blt_Secure_Encrypted_Option_Store( new Blt_Secure_Crypto( $key_b ) ) )->is_invalidated() );
+	}
 }

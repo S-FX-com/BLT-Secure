@@ -73,6 +73,44 @@ class Test_Updater extends TestCase {
 }
 
 /**
+ * Release-asset-only policy.
+ */
+class Test_Updater_Package_Policy extends TestCase {
+
+	public function test_release_assets_are_required_not_preferred() {
+		// Library default is PREFER (= 1): falls back to the source zip.
+		$this->assertSame( 2, Blt_Secure_Updater::REQUIRE_RELEASE_ASSETS );
+	}
+
+	public function test_only_ci_built_release_assets_are_acceptable() {
+		$this->assertTrue( Blt_Secure_Updater::is_release_asset_url( 'https://api.github.com/repos/S-FX-com/BLT-Secure/releases/assets/123456' ) );
+		$this->assertTrue( Blt_Secure_Updater::is_release_asset_url( 'https://github.com/S-FX-com/BLT-Secure/releases/download/v1.2.3/blt-secure-1.2.3.zip' ) );
+		foreach ( array(
+			'https://api.github.com/repos/S-FX-com/BLT-Secure/zipball/v1.2.3',
+			'https://api.github.com/repos/S-FX-com/BLT-Secure/zipball/main',
+			'https://github.com/S-FX-com/BLT-Secure/archive/refs/heads/main.zip',
+			'https://codeload.github.com/S-FX-com/BLT-Secure/zip/refs/tags/v1.2.3',
+			'https://github.com/S-FX-com/BLT-Secure/releases/download/v1.2.3/evil.zip',
+			'https://github.com/Other/BLT-Secure/releases/download/v1/blt-secure.zip',
+			'http://github.com/S-FX-com/BLT-Secure/releases/download/v1.2.3/blt-secure-1.2.3.zip',
+			'https://evil.test/S-FX-com/BLT-Secure/releases/download/v1/blt-secure.zip',
+			'',
+		) as $bad ) {
+			$this->assertFalse( Blt_Secure_Updater::is_release_asset_url( $bad ), $bad );
+		}
+	}
+
+	public function test_guard_blocks_a_source_archive_of_this_repo_only() {
+		$archive = 'https://api.github.com/repos/S-FX-com/BLT-Secure/zipball/v9.9.9';
+		$this->assertInstanceOf( WP_Error::class, Blt_Secure_Updater::guard_package( false, $archive ) );
+		$this->assertFalse( Blt_Secure_Updater::guard_package( false, 'https://api.github.com/repos/S-FX-com/BLT-Secure/releases/assets/42' ) );
+		// Other plugins' packages pass through untouched.
+		$this->assertFalse( Blt_Secure_Updater::guard_package( false, 'https://downloads.wordpress.org/plugin/akismet.zip' ) );
+		$this->assertSame( 'kept', Blt_Secure_Updater::guard_package( 'kept', 'https://downloads.wordpress.org/plugin/akismet.zip' ) );
+	}
+}
+
+/**
  * .github/scripts/bump-version.php semver math + file rewriting.
  */
 class Test_Version_Bump extends TestCase {

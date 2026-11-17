@@ -19,7 +19,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 class Blt_Secure_Alerting implements Blt_Secure_Module {
 
 	const OPTION     = 'blt_secure_events';
-	const MAX_EVENTS = 100;
+	const MAX_EVENTS = 200;
 
 	/**
 	 * Settings.
@@ -94,18 +94,32 @@ class Blt_Secure_Alerting implements Blt_Secure_Module {
 	 * @return void
 	 */
 	public function notify( $type, array $context = array() ) {
+		// Record first, THEN fire the action: subscribers (the fleet snapshot,
+		// alert channels) must see this event in the buffer. They only enqueue
+		// their delivery work, so nothing slow runs on this request.
+		if ( $this->options->get( 'alerting', 'log_events', true ) ) {
+			$this->record( $type, $context );
+		}
+
 		/**
-		 * Fires for every security event. Phase 3 alert channels hook here.
+		 * Fires for every security event, after it has been recorded. Alert
+		 * channels hook here; they must not do network or mail I/O inline.
 		 *
 		 * @param string $type Event type slug.
 		 * @param array  $context Event context.
 		 */
 		do_action( 'blt_secure_alert', $type, $context );
+	}
 
-		if ( ! $this->options->get( 'alerting', 'log_events', true ) ) {
-			return;
-		}
-
+	/**
+	 * Append one event to the bounded ring buffer (re-reading the option
+	 * immediately before the write to keep the race window tiny).
+	 *
+	 * @param string $type    Event type slug.
+	 * @param array  $context Structured context.
+	 * @return void
+	 */
+	private function record( $type, array $context ) {
 		$events = get_option( self::OPTION, array() );
 		if ( ! is_array( $events ) ) {
 			$events = array();

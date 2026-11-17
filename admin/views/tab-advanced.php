@@ -109,14 +109,14 @@ $blt_secure_events   = is_array( $blt_secure_events ) ? array_slice( array_rever
 		<div class="blt-setting">
 			<div class="blt-setting-info">
 				<div class="blt-setting-title"><?php esc_html_e( 'Dashboard endpoint', 'blt-secure' ); ?></div>
-				<p class="blt-setting-desc"><?php esc_html_e( 'The base URL of your fleet dashboard Worker (e.g. https://fleet.example.com).', 'blt-secure' ); ?></p>
+				<p class="blt-setting-desc"><?php esc_html_e( 'The https:// base URL of your fleet dashboard Worker (e.g. https://fleet.example.com). Plain http:// is rejected. Legacy feature — superseded by BLT Connect.', 'blt-secure' ); ?></p>
 			</div>
 			<div class="blt-setting-control">
 				<input type="url" name="<?php echo esc_attr( $blt_secure_opt ); ?>[fleet][endpoint]" value="<?php echo esc_attr( isset( $blt_secure_fleet['endpoint'] ) ? $blt_secure_fleet['endpoint'] : '' ); ?>" class="regular-text" placeholder="https://fleet.example.com" />
 			</div>
 		</div>
 		<?php
-		blt_secure_setting_open( __( 'Accept remote commands', 'blt-secure' ), __( 'Let the dashboard queue scans/syncs this site pulls and runs hourly. Only a fixed whitelist of scan/sync actions is ever executed — never arbitrary code.', 'blt-secure' ) );
+		blt_secure_setting_open( __( 'Accept remote commands', 'blt-secure' ), __( 'Let the dashboard queue scans/syncs this site pulls and runs hourly (at most 5 per pull; the response must carry a valid signature). Only a fixed whitelist of scan/sync actions is ever executed — never arbitrary code.', 'blt-secure' ) );
 		blt_secure_setting_control();
 		blt_secure_toggle( $blt_secure_opt . '[fleet][commands]', ! empty( $blt_secure_fleet['commands'] ) );
 		blt_secure_setting_close();
@@ -248,9 +248,9 @@ $blt_secure_events   = is_array( $blt_secure_events ) ? array_slice( array_rever
 				<p class="blt-setting-desc">
 					<?php
 					if ( $blt_secure_repo_public ) {
-						esc_html_e( 'A token is optional: add one only to raise the GitHub API rate limit on hosts that share an outbound IP, or if the repository is later made private. Create a fine-grained personal access token with read-only Contents permission on S-FX-com/BLT-Secure (or a classic token with the repo scope). The token is stored encrypted. Alternatively, define BLT_SECURE_GITHUB_TOKEN in wp-config.php.', 'blt-secure' );
+						esc_html_e( 'A token is optional: add one only to raise the GitHub API rate limit on hosts that share an outbound IP, or if the repository is later made private. Create a fine-grained personal access token with read-only Contents permission on S-FX-com/BLT-Secure only (do not use a classic token — its repo scope grants write access to every repository you own). The token is stored encrypted. Alternatively, define BLT_SECURE_GITHUB_TOKEN in wp-config.php.', 'blt-secure' );
 					} else {
-						esc_html_e( 'BLT Secure updates itself from a private GitHub repository, which requires a token. Create a fine-grained personal access token with read-only Contents permission on S-FX-com/BLT-Secure (or a classic token with the repo scope). The token is stored encrypted. Alternatively, define BLT_SECURE_GITHUB_TOKEN in wp-config.php.', 'blt-secure' );
+						esc_html_e( 'BLT Secure updates itself from a private GitHub repository, which requires a token. Create a fine-grained personal access token with read-only Contents permission on S-FX-com/BLT-Secure only (do not use a classic token — its repo scope grants write access to every repository you own). The token is stored encrypted. Alternatively, define BLT_SECURE_GITHUB_TOKEN in wp-config.php.', 'blt-secure' );
 					}
 					?>
 				</p>

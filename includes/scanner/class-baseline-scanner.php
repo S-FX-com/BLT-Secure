@@ -2,12 +2,14 @@
 /**
  * Plugin/theme file-integrity baseline engine.
  *
- * There are no official checksums for arbitrary plugins and themes, so
- * integrity is tracked against a locally-stored baseline: on first sight (or
- * after a legitimate version change) the file hashes are recorded; between
- * versions, any change to those files is unexpected and reported. Keying the
- * baseline by version means a normal update re-baselines cleanly instead of
- * producing false positives.
+ * There are no official checksums for most plugins and themes, so integrity is
+ * tracked against a locally-stored baseline: on first sight the file hashes
+ * are recorded (trust on first use); between versions, any change to those
+ * files is unexpected and reported. A version change re-baselines ONLY when it
+ * is confirmed — by a real update event (the upgrader ran), by wp.org's
+ * published plugin checksums, or by the admin acknowledging the finding. A
+ * bare edit of the Version header is not a confirmation: it would otherwise
+ * let a tamperer launder a modification into the baseline.
  *
  * @package Blt_Secure
  */
@@ -17,30 +19,111 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Hashes an extension's PHP files and diffs against a stored baseline.
+ * Hashes an extension's code files and diffs against a stored baseline.
  */
 class Blt_Secure_Baseline_Scanner {
 
 	/**
-	 * Skip extensions with more PHP files than this (bounds option size and
-	 * scan cost; such trees are hashed as a whole-count only).
+	 * Extensions with more hashable files than this are reported as
+	 * "unmonitored" rather than silently dropped (bounds scan cost).
 	 */
-	const MAX_FILES = 5000;
+	const MAX_FILES = 20000;
 
 	/**
-	 * Skip individual files larger than this when hashing.
+	 * Files larger than this are not hashed; their size is recorded instead so
+	 * a change is still detected.
 	 */
-	const MAX_FILE_BYTES = 2097152; // 2 MB.
+	const MAX_FILE_BYTES = 16777216; // 16 MB.
 
 	/**
-	 * Whether a path is a PHP-family source file (the integrity-relevant set).
+	 * Why the last hash_dir() call returned null: 'too_large' | 'unreadable' | ''.
+	 *
+	 * @var string
+	 */
+	public $last_reason = '';
+
+	/**
+	 * Names/extensions worth hashing: every PHP-handler extension, plus the
+	 * script and config files an attacker uses to inject behaviour without
+	 * touching PHP (JS skimmers, .htaccess/.user.ini handler tricks).
 	 *
 	 * @param string $path File path.
 	 * @return bool
 	 */
 	public static function is_hashable( $path ) {
-		$ext = strtolower( pathinfo( $path, PATHINFO_EXTENSION ) );
+		$name = strtolower( basename( str_replace( '\\', '/', (string) $path ) ) );
+		if ( in_array( $name, array( '.htaccess', '.user.ini', 'php.ini', 'web.config' ), true ) ) {
+			return true;
+		}
+		$ext = strtolower( pathinfo( $name, PATHINFO_EXTENSION ) );
+		if ( in_array( $ext, array( 'js', 'mjs', 'json' ), true ) ) {
+			return true;
+		}
+		if ( ! class_exists( 'Blt_Secure_Malware_Scanner' ) ) {
+			require_once BLT_SECURE_DIR . 'includes/scanner/class-malware-scanner.php';
+		}
+		return Blt_Secure_Malware_Scanner::is_php_file( $name );
+	}
+
+	/**
+	 * Version of the hashed-file scope stored with each baseline. Baselines written by
+	 * releases before the scope widened carry no `scope` and are "legacy".
+	 *
+	 * 1 (implicit): PHP-family files up to 2 MB.
+	 * 2: also JS/JSON, server config files, more PHP extensions, files up to 16 MB.
+	 */
+	const SCOPE = 2;
+
+	/**
+	 * The size ceiling the legacy scope hashed under.
+	 */
+	const LEGACY_MAX_FILE_BYTES = 2097152;
+
+	/**
+	 * Whether a path was inside the LEGACY (scope 1) hashed set.
+	 *
+	 * Pure function (unit-tested).
+	 *
+	 * @param string $path File path.
+	 * @return bool
+	 */
+	public static function is_legacy_scope( $path ) {
+		$ext = strtolower( pathinfo( basename( str_replace( '\\', '/', (string) $path ) ), PATHINFO_EXTENSION ) );
 		return in_array( $ext, array( 'php', 'php3', 'php4', 'php5', 'php7', 'phtml', 'pht', 'inc' ), true );
+	}
+
+	/**
+	 * Diff a LEGACY baseline against hashes taken with the wider current scope.
+	 *
+	 * Comparing the two directly reports every unchanged JS/JSON/config file as "added" on
+	 * the first scan after an upgrade — false drift on nearly every plugin. Evidence about
+	 * what the old baseline DID cover is kept exactly: modified and removed paths are
+	 * reported as usual, and an added path counts only if the old scanner would have hashed it
+	 * (legacy extension and not over the old size ceiling). Everything else is newly covered
+	 * ground, initialised by the caller once nothing else changed.
+	 *
+	 * Pure apart from the injected size lookup (unit-tested).
+	 *
+	 * @param array    $baseline Stored legacy path => hash map.
+	 * @param array    $current  Current path => hash map.
+	 * @param callable $size_of  function( string $path ): int|null — on-disk size, or null if unknown.
+	 * @return array{added:string[],modified:string[],removed:string[]}
+	 */
+	public static function legacy_diff( array $baseline, array $current, $size_of ) {
+		$diff  = self::diff( $baseline, $current );
+		$added = array();
+		foreach ( $diff['added'] as $path ) {
+			if ( ! self::is_legacy_scope( $path ) ) {
+				continue; // Newly covered file type.
+			}
+			$size = call_user_func( $size_of, $path );
+			if ( null === $size || $size > self::LEGACY_MAX_FILE_BYTES ) {
+				continue; // The old scanner skipped it (too large) or it is gone.
+			}
+			$added[] = $path;
+		}
+		$diff['added'] = $added;
+		return $diff;
 	}
 
 	/**
@@ -82,6 +165,80 @@ class Blt_Secure_Baseline_Scanner {
 	}
 
 	/**
+	 * Decide what to do with an extension given its stored baseline.
+	 *
+	 * Pure function (unit-tested).
+	 *  - 'baseline': nothing stored — record the current state (trust on first use).
+	 *  - 'compare':  same version — any change is drift.
+	 *  - 'accept':   version changed AND the change is confirmed — re-baseline.
+	 *  - 'flag':     version changed with NO confirmation — keep the old
+	 *                baseline and report it.
+	 *
+	 * @param array|null $stored       Stored index entry (needs 'version'), or null.
+	 * @param string     $version      Version found on disk.
+	 * @param bool       $confirmed    A real update event or wp.org checksums vouch for it.
+	 * @param bool       $acknowledged The admin ignored the "version bumped" finding.
+	 * @return string
+	 */
+	public static function rebaseline_decision( $stored, $version, $confirmed, $acknowledged ) {
+		if ( ! is_array( $stored ) || ! isset( $stored['version'] ) ) {
+			return 'baseline';
+		}
+		if ( (string) $stored['version'] === (string) $version ) {
+			return 'compare';
+		}
+		return ( $confirmed || $acknowledged ) ? 'accept' : 'flag';
+	}
+
+	/**
+	 * Parse a wp.org plugin-checksums JSON body into path => list of md5s.
+	 *
+	 * Pure function (unit-tested). Returns null on anything unusable.
+	 *
+	 * @param string $body JSON body of downloads.wordpress.org/plugin-checksums/{slug}/{version}.json.
+	 * @return array<string,string[]>|null
+	 */
+	public static function parse_manifest( $body ) {
+		$data = json_decode( (string) $body, true );
+		if ( ! is_array( $data ) || empty( $data['files'] ) || ! is_array( $data['files'] ) ) {
+			return null;
+		}
+		$out = array();
+		foreach ( $data['files'] as $path => $info ) {
+			if ( ! is_array( $info ) || ! isset( $info['md5'] ) ) {
+				continue;
+			}
+			$sums = array_values( array_filter( array_map( 'strval', (array) $info['md5'] ) ) );
+			if ( ! empty( $sums ) ) {
+				$out[ ltrim( str_replace( '\\', '/', (string) $path ), '/' ) ] = $sums;
+			}
+		}
+		return empty( $out ) ? null : $out;
+	}
+
+	/**
+	 * Whether every hashed file matches the published manifest. A file that is
+	 * absent from the manifest (an addition) or differs fails the match.
+	 *
+	 * Pure function (unit-tested).
+	 *
+	 * @param array $hashes   path => md5 for the extension on disk.
+	 * @param array $manifest path => md5 list (see parse_manifest()).
+	 * @return bool
+	 */
+	public static function matches_manifest( array $hashes, array $manifest ) {
+		if ( empty( $hashes ) ) {
+			return false;
+		}
+		foreach ( $hashes as $path => $hash ) {
+			if ( ! isset( $manifest[ $path ] ) || ! in_array( (string) $hash, $manifest[ $path ], true ) ) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/**
 	 * Content-sensitive whitelist fingerprint for a drift finding.
 	 *
 	 * Pure function (unit-tested). Folds the current hash of every changed
@@ -108,40 +265,62 @@ class Blt_Secure_Baseline_Scanner {
 	}
 
 	/**
-	 * Hash every PHP-family file under a directory, dir-relative.
+	 * Hash every hashable file under a directory, dir-relative.
+	 *
+	 * Symlinks are recorded as "link:<target>" (never followed); files over
+	 * MAX_FILE_BYTES as "big:<bytes>" so growth/shrinkage still registers.
 	 *
 	 * @param string $dir Absolute directory.
-	 * @return array|null path => md5 map, or null when the tree is too large
-	 *                    or unreadable.
+	 * @return array|null path => hash map, or null when the tree is too large
+	 *                    or unreadable (see $last_reason).
 	 */
 	public function hash_dir( $dir ) {
+		$this->last_reason = '';
 		if ( ! is_dir( $dir ) ) {
+			$this->last_reason = 'unreadable';
 			return null;
 		}
 		try {
-			$iterator = new RecursiveIteratorIterator(
-				new RecursiveDirectoryIterator( $dir, FilesystemIterator::SKIP_DOTS )
+			$dir_it   = new RecursiveDirectoryIterator( $dir, FilesystemIterator::SKIP_DOTS );
+			$filter   = new RecursiveCallbackFilterIterator(
+				$dir_it,
+				static function ( $current ) {
+					if ( $current->isDir() && ! $current->isLink() ) {
+						return ! in_array( $current->getFilename(), array( 'node_modules', '.git', '.svn', '.hg' ), true );
+					}
+					return true;
+				}
 			);
+			$iterator = new RecursiveIteratorIterator( $filter );
 		} catch ( \Throwable $e ) { // phpcs:ignore Generic.CodeAnalysis.EmptyStatement.DetectedCatch
+			$this->last_reason = 'unreadable';
 			return null;
 		}
 
 		$hashes = array();
 		$prefix = strlen( rtrim( str_replace( '\\', '/', $dir ), '/' ) ) + 1;
 		foreach ( $iterator as $file ) {
-			if ( ! $file->isFile() || ! self::is_hashable( $file->getPathname() ) ) {
+			$path = $file->getPathname();
+			$rel  = str_replace( '\\', '/', substr( $path, $prefix ) );
+
+			if ( $file->isLink() ) {
+				$hashes[ $rel ] = 'link:' . md5( (string) @readlink( $path ) ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+			} elseif ( $file->isFile() && self::is_hashable( $path ) ) {
+				if ( $file->getSize() > self::MAX_FILE_BYTES ) {
+					$hashes[ $rel ] = 'big:' . $file->getSize();
+				} else {
+					$md5 = @md5_file( $path ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+					if ( false !== $md5 ) {
+						$hashes[ $rel ] = $md5;
+					}
+				}
+			} else {
 				continue;
 			}
-			if ( count( $hashes ) >= self::MAX_FILES ) {
+
+			if ( count( $hashes ) > self::MAX_FILES ) {
+				$this->last_reason = 'too_large';
 				return null; // Too large to baseline reliably.
-			}
-			if ( $file->getSize() > self::MAX_FILE_BYTES ) {
-				continue;
-			}
-			$rel = str_replace( '\\', '/', substr( $file->getPathname(), $prefix ) );
-			$md5 = md5_file( $file->getPathname() );
-			if ( false !== $md5 ) {
-				$hashes[ $rel ] = $md5;
 			}
 		}
 		return $hashes;

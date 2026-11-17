@@ -107,7 +107,7 @@ class Blt_Secure_Headers implements Blt_Secure_Module {
 		$x_frame  = isset( $input['x_frame'] ) ? strtoupper( sanitize_text_field( $input['x_frame'] ) ) : 'SAMEORIGIN';
 		$referrer = isset( $input['referrer_policy'] ) ? sanitize_text_field( $input['referrer_policy'] ) : 'strict-origin-when-cross-origin';
 
-		$policy = isset( $input['csp_policy'] ) ? trim( sanitize_textarea_field( $input['csp_policy'] ) ) : '';
+		$policy = isset( $input['csp_policy'] ) ? self::normalize_header_value( sanitize_textarea_field( $input['csp_policy'] ) ) : '';
 		if ( '' === $policy ) {
 			$policy = self::CSP_STARTER;
 		}
@@ -125,6 +125,22 @@ class Blt_Secure_Headers implements Blt_Secure_Module {
 			'csp_report_only' => ! empty( $input['csp_report_only'] ),
 			'csp_policy'      => $policy,
 		);
+	}
+
+	/**
+	 * Collapse a header value to a single line. PHP refuses to send a header
+	 * containing a newline (it warns and sends nothing), so a CSP typed one
+	 * directive per line in the textarea would silently never be sent.
+	 * Pure function (unit-tested).
+	 *
+	 * @param mixed $value Raw value.
+	 * @return string
+	 */
+	public static function normalize_header_value( $value ) {
+		if ( ! is_scalar( $value ) ) {
+			return '';
+		}
+		return trim( (string) preg_replace( '/[\x00-\x20]+/', ' ', (string) $value ) );
 	}
 
 	/**
@@ -169,7 +185,7 @@ class Blt_Secure_Headers implements Blt_Secure_Module {
 			 *
 			 * @param string $policy Policy directives.
 			 */
-			$policy = apply_filters( 'blt_secure_csp_policy', $s['csp_policy'] );
+			$policy = self::normalize_header_value( apply_filters( 'blt_secure_csp_policy', $s['csp_policy'] ) );
 			if ( '' !== $policy ) {
 				$name = ! empty( $s['csp_report_only'] ) ? 'Content-Security-Policy-Report-Only' : 'Content-Security-Policy';
 				$this->send_if_absent( $name, $policy );
@@ -185,6 +201,11 @@ class Blt_Secure_Headers implements Blt_Secure_Module {
 	 * @return void
 	 */
 	private function send_if_absent( $name, $value ) {
+		$value = self::normalize_header_value( $value );
+		if ( '' === $value ) {
+			return;
+		}
+
 		foreach ( headers_list() as $sent ) {
 			if ( 0 === stripos( $sent, $name . ':' ) ) {
 				return;

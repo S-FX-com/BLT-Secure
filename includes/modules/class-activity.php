@@ -98,9 +98,18 @@ class Blt_Secure_Activity implements Blt_Secure_Module {
 		add_action( 'deactivated_plugin', array( $this, 'on_deactivated_plugin' ), 10, 1 );
 		add_action( 'switch_theme', array( $this, 'on_switch_theme' ), 10, 1 );
 		add_action( 'upgrader_process_complete', array( $this, 'on_upgrader_complete' ), 10, 2 );
+		add_action( 'add_user_role', array( $this, 'on_add_user_role' ), 10, 2 );
+		add_action( 'user_register', array( $this, 'on_user_register' ), 10, 1 );
+		add_action( 'profile_update', array( $this, 'on_profile_update' ), 10, 2 );
+		add_action( 'delete_plugin', array( $this, 'on_delete_plugin' ), 10, 1 );
 
-		if ( is_admin() ) {
-			add_action( 'updated_option', array( $this, 'on_updated_option' ), 10, 3 );
+		// Per-option hooks instead of the global updated_option listener: each
+		// fires only for that one option (zero cost for every other write), so
+		// they can run in EVERY context — front end, REST, cron, WP-CLI — which
+		// is where an exploited plugin endpoint would change siteurl or the
+		// default role. A listener gated on is_admin() would miss exactly that.
+		foreach ( self::watched_options() as $option ) {
+			add_action( 'update_option_' . $option, array( $this, 'on_watched_option' ), 10, 3 );
 		}
 	}
 
@@ -117,6 +126,38 @@ class Blt_Secure_Activity implements Blt_Secure_Module {
 	 */
 	public static function is_admin_grant( $role, $old_roles ) {
 		return 'administrator' === $role && ! in_array( 'administrator', (array) $old_roles, true );
+	}
+
+	/**
+	 * Whether a role list includes a role that can change the site or its
+	 * content (so a new account / credential change on it is worth an alert).
+	 * Subscriber-level churn on a membership site is deliberately not logged.
+	 *
+	 * @param array $roles Role slugs.
+	 * @return bool
+	 */
+	public static function is_privileged_roles( $roles ) {
+		return ! empty( array_intersect( array( 'administrator', 'editor', 'shop_manager' ), (array) $roles ) );
+	}
+
+	/**
+	 * Which sensitive credentials differ between a user's old and new record.
+	 *
+	 * @param string $old_email Old email.
+	 * @param string $new_email New email.
+	 * @param string $old_pass  Old password hash.
+	 * @param string $new_pass  New password hash.
+	 * @return string[] Subset of 'email', 'password'.
+	 */
+	public static function changed_credentials( $old_email, $new_email, $old_pass, $new_pass ) {
+		$changed = array();
+		if ( (string) $old_email !== (string) $new_email ) {
+			$changed[] = 'email';
+		}
+		if ( (string) $old_pass !== (string) $new_pass ) {
+			$changed[] = 'password';
+		}
+		return $changed;
 	}
 
 	/**
@@ -169,12 +210,123 @@ class Blt_Secure_Activity implements Blt_Secure_Module {
 		if ( ! self::is_admin_grant( $role, $old_roles ) ) {
 			return;
 		}
-		$user = get_userdata( $user_id );
+		$this->log_admin_grant( $user_id );
+	}
+
+	/**
+	 * Users already reported as granted admin during this request. set_role()
+	 * fires both set_user_role and add_user_role, so without this one grant
+	 * would be logged twice.
+	 *
+	 * @var array<int,bool>
+	 */
+	private $granted = array();
+
+	/**
+	 * Notify an administrator grant once per user per request.
+	 *
+	 * @param int $user_id Affected user.
+	 * @return void
+	 */
+	private function log_admin_grant( $user_id ) {
+		$user_id = (int) $user_id;
+		if ( isset( $this->granted[ $user_id ] ) ) {
+			return;
+		}
+		$this->granted[ $user_id ] = true;
+		$user                      = get_userdata( $user_id );
 		$this->alerting->notify(
 			'activity_admin_granted',
 			array(
-				'user'  => $user ? $user->user_login : (int) $user_id,
+				'user'  => $user ? $user->user_login : $user_id,
 				'actor' => $this->actor(),
+			)
+		);
+	}
+
+	/**
+	 * Log an administrator role ADDED as a secondary role (WP_User::add_role()
+	 * fires add_user_role, not set_user_role).
+	 *
+	 * @param int    $user_id User id.
+	 * @param string $role    Role added.
+	 * @return void
+	 */
+	public function on_add_user_role( $user_id, $role ) {
+		if ( 'administrator' !== $role ) {
+			return;
+		}
+		$this->log_admin_grant( $user_id );
+	}
+
+	/**
+	 * Log creation of an account with an elevated role.
+	 *
+	 * @param int $user_id New user.
+	 * @return void
+	 */
+	public function on_user_register( $user_id ) {
+		$user = get_userdata( $user_id );
+		if ( ! $user || ! self::is_privileged_roles( $user->roles ) ) {
+			return;
+		}
+		$this->alerting->notify(
+			'activity_user_registered',
+			array(
+				'user'  => $user->user_login,
+				'roles' => implode( ',', array_map( 'sanitize_key', (array) $user->roles ) ),
+				'actor' => $this->actor(),
+			)
+		);
+	}
+
+	/**
+	 * Log an email or password change on a privileged account — the account
+	 * takeover step.
+	 *
+	 * @param int     $user_id       User id.
+	 * @param WP_User $old_user_data User before the update.
+	 * @return void
+	 */
+	public function on_profile_update( $user_id, $old_user_data = null ) {
+		if ( ! is_object( $old_user_data ) ) {
+			return;
+		}
+		$user = get_userdata( $user_id );
+		if ( ! $user || ! self::is_privileged_roles( $user->roles ) ) {
+			return;
+		}
+		$changed = self::changed_credentials(
+			isset( $old_user_data->user_email ) ? $old_user_data->user_email : '',
+			$user->user_email,
+			isset( $old_user_data->user_pass ) ? $old_user_data->user_pass : '',
+			$user->user_pass
+		);
+		if ( empty( $changed ) ) {
+			return;
+		}
+		$this->alerting->notify(
+			'activity_user_updated',
+			array(
+				'user'    => $user->user_login,
+				'changed' => implode( ',', $changed ),
+				'actor'   => $this->actor(),
+			)
+		);
+	}
+
+	/**
+	 * Log a plugin being deleted from disk.
+	 *
+	 * @param string $plugin Plugin file.
+	 * @return void
+	 */
+	public function on_delete_plugin( $plugin ) {
+		$this->alerting->notify(
+			'activity_plugin_deleted',
+			array(
+				'plugin' => (string) $plugin,
+				'actor'  => $this->actor(),
 			)
 		);
 	}
@@ -283,6 +435,18 @@ class Blt_Secure_Activity implements Blt_Secure_Module {
 			return array( (string) $hook_extra['theme'] );
 		}
 		return array();
+	}
+
+	/**
+	 * Per-option hook adapter (update_option_{$option} passes old, new, name).
+	 *
+	 * @param mixed  $old    Old value.
+	 * @param mixed  $value  New value.
+	 * @param string $option Option name.
+	 * @return void
+	 */
+	public function on_watched_option( $old, $value, $option = '' ) {
+		$this->on_updated_option( (string) $option, $old, $value );
 	}
 
 	/**

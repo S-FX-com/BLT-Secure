@@ -4,7 +4,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { sanitizeIds, markDone } from '../src/db.js';
+import { sanitizeIds, markDone, pendingCommands, recordEvents, REDELIVER_AFTER, COMMAND_TTL, MAX_PER_PULL } from '../src/db.js';
 
 test( 'sanitizeIds keeps only positive integers', () => {
 	assert.deepEqual( sanitizeIds( [ 1, 2, 3 ] ), [ 1, 2, 3 ] );
@@ -49,4 +49,39 @@ test( 'markDone with no ids issues no writes', async () => {
 	const db = fakeDb();
 	await markDone( db, 42, [], 1700000000 );
 	assert.equal( db._binds.length, 0 );
+} );
+
+test( 'pendingCommands re-sends stale deliveries, expires old ones, and is capped', async () => {
+	let captured;
+	const db = {
+		prepare( sql ) {
+			return {
+				bind( ...args ) {
+					captured = { sql, args };
+					return { all: async () => ( { results: [] } ) };
+				},
+			};
+		},
+	};
+	await pendingCommands( db, 9, 1000000 );
+	assert.deepEqual( captured.args, [ 9, 1000000 - COMMAND_TTL, 1000000 - REDELIVER_AFTER ] );
+	assert.match( captured.sql, /status = 'pending' OR \(status = 'delivered' AND delivered_at < \?3\)/ );
+	assert.match( captured.sql, new RegExp( 'LIMIT ' + MAX_PER_PULL + '$' ) );
+} );
+
+test( 'recordEvents trims old rows in the same batch', async () => {
+	const stmts = [];
+	const db = {
+		prepare( sql ) {
+			return { bind: ( ...args ) => ( { sql, args } ) };
+		},
+		async batch( s ) {
+			stmts.push( ...s );
+		},
+	};
+	await recordEvents( db, 3, 2000000, { lockout: 2 } );
+	assert.equal( stmts.length, 2 );
+	assert.match( stmts[ 1 ].sql, /^DELETE FROM events WHERE ts < \?$/ );
+	await recordEvents( db, 3, 2000000, {} );
+	assert.equal( stmts.length, 2 ); // nothing to record → no writes at all.
 } );

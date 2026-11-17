@@ -181,11 +181,28 @@ class Blt_Secure_Timeline implements Blt_Secure_Module {
 	 * @return array
 	 */
 	private function store( $status, array $events, $error ) {
+		$last_ok = time();
+		if ( 'ok' !== $status ) {
+			// A failed or skipped poll must not erase the events already
+			// collected (a rate-limit blip would blank the last 24 h of attack
+			// history); keep them and remember when they were last refreshed.
+			$previous = $this->latest();
+			if ( is_array( $previous ) ) {
+				if ( empty( $events ) && ! empty( $previous['events'] ) && is_array( $previous['events'] ) ) {
+					$events = $previous['events'];
+				}
+				$last_ok = isset( $previous['last_ok'] ) ? (int) $previous['last_ok'] : ( isset( $previous['time'] ) ? (int) $previous['time'] : 0 );
+			} else {
+				$last_ok = 0;
+			}
+		}
+
 		$payload = array(
-			'time'   => time(),
-			'status' => $status,
-			'error'  => $error,
-			'events' => $events,
+			'time'    => time(),
+			'status'  => $status,
+			'error'   => $error,
+			'events'  => $events,
+			'last_ok' => $last_ok,
 		);
 		update_option( self::RESULTS_OPTION, $payload, false );
 		return $payload;

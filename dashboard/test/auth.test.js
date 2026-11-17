@@ -5,7 +5,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { sha256Hex, hmacHex, tokenHash, timingSafeEqualHex, isFresh, verifySignature } from '../src/auth.js';
+import { sha256Hex, hmacHex, tokenHash, timingSafeEqualHex, isFresh, verifySignature, responseKey, signResponse, isValidNonce } from '../src/auth.js';
 
 test( 'sha256Hex matches the known vector for "abc"', async () => {
 	assert.equal(
@@ -59,4 +59,34 @@ test( 'isFresh honors the skew window', () => {
 	assert.equal( isFresh( 1000, 1200 ), true ); // 200s <= 300.
 	assert.equal( isFresh( 1000, 1400 ), false ); // 400s > 300.
 	assert.equal( isFresh( 'nan', 1000 ), false );
+} );
+
+// Cross-language vectors: tests/test-fleet.php asserts the SAME values from PHP.
+test( 'response key + signature match the plugin (PHP) vectors', async () => {
+	const token = 'site-secret-token';
+	assert.equal( await responseKey( token ), 'f113ddc2924d21b65a60ecb76e9795f2ea8414d3cf894d5dac29c7b04e442e77' );
+	assert.equal(
+		await signResponse( token, 1700000000, 'abcdef0123456789abcd', '{"commands":[]}' ),
+		'0ed1512e97ee5058793cb6e10b5bf601357b877f88d16429b48027be024329f4'
+	);
+} );
+
+test( 'the response key is not the bearer token and changes the signature', async () => {
+	const token = 'site-secret-token';
+	assert.notEqual( await responseKey( token ), token );
+	const viaToken = await hmacHex( token, '1.n.b' );
+	assert.notEqual( await signResponse( token, 1, 'n', 'b' ), viaToken );
+} );
+
+test( 'response signature binds the request nonce and the body', async () => {
+	const a = await signResponse( 't', 5, 'nonceAAAAAAAAAAAA', '{}' );
+	assert.notEqual( a, await signResponse( 't', 5, 'nonceBBBBBBBBBBBB', '{}' ) );
+	assert.notEqual( a, await signResponse( 't', 5, 'nonceAAAAAAAAAAAA', '{"commands":[{"id":1}]}' ) );
+} );
+
+test( 'isValidNonce', () => {
+	assert.equal( isValidNonce( 'abcdef0123456789' ), true );
+	assert.equal( isValidNonce( 'short' ), false );
+	assert.equal( isValidNonce( 'has spaces in it 1234' ), false );
+	assert.equal( isValidNonce( '' ), false );
 } );

@@ -42,12 +42,20 @@ class Test_Cf_Payloads extends TestCase {
 	public function test_custom_pack_expressions() {
 		$rules = Blt_Secure_Rule_Definitions::custom_pack_rules();
 
+		// TOR is folded into the ASN rule: the pack is 2 rules (Free budget).
+		$this->assertSame( array( 'asn', 'paths' ), array_keys( $rules ) );
 		$this->assertSame( 'managed_challenge', $rules['asn']['action'] );
-		$this->assertMatchesRegularExpression( '/^\(ip\.src\.asnum in \{[\d ]+\}\)$/', $rules['asn']['expression'] );
-		$this->assertSame( '(ip.src.country eq "T1")', $rules['tor']['expression'] );
-		$this->assertSame( 'managed_challenge', $rules['tor']['action'] );
+		$this->assertStringContainsString( 'ip.src.asnum in {9009 ', $rules['asn']['expression'] );
+		$this->assertStringContainsString( 'ip.src.country eq "T1"', $rules['asn']['expression'] );
+		// Webhooks/REST/WP-Cron/XML-RPC callers cannot solve a challenge: exempt.
+		foreach ( array( '/wp-json', '/wp-cron.php', '/xmlrpc.php' ) as $path ) {
+			$this->assertStringContainsString( 'starts_with(lower(http.request.uri.path), "' . $path . '")', $rules['asn']['expression'] );
+		}
+		$this->assertStringContainsString( ' and not (', $rules['asn']['expression'] );
+
 		$this->assertSame( 'block', $rules['paths']['action'] );
-		$this->assertStringContainsString( 'wp-config', $rules['paths']['expression'] );
+		$this->assertStringContainsString( '/wp-config.', $rules['paths']['expression'] );
+		$this->assertStringNotContainsString( '"wp-config"', $rules['paths']['expression'], 'must not match /wp-config-guide style slugs' );
 		$this->assertStringContainsString( '/.env', $rules['paths']['expression'] );
 		$this->assertStringContainsString( '/.git/', $rules['paths']['expression'] );
 
@@ -57,12 +65,54 @@ class Test_Cf_Payloads extends TestCase {
 		}
 	}
 
+	public function test_custom_pack_subdirectory_install_prefixes_paths() {
+		$rules = Blt_Secure_Rule_Definitions::custom_pack_rules( '/Blog/' );
+		$this->assertStringContainsString( '"/blog/wp-json"', $rules['asn']['expression'] );
+	}
+
+	public function test_plan_normalization_and_limits() {
+		$this->assertSame( 'free', Blt_Secure_Rule_Definitions::normalize_plan( 'free' ) );
+		$this->assertSame( 'pro', Blt_Secure_Rule_Definitions::normalize_plan( 'Pro Website' ) );
+		$this->assertSame( 'business', Blt_Secure_Rule_Definitions::normalize_plan( 'business' ) );
+		$this->assertSame( 'enterprise', Blt_Secure_Rule_Definitions::normalize_plan( 'enterprise' ) );
+		$this->assertSame( '', Blt_Secure_Rule_Definitions::normalize_plan( 'mystery' ) );
+
+		// https://developers.cloudflare.com/waf/custom-rules/
+		$this->assertSame( 5, Blt_Secure_Rule_Definitions::custom_rule_limit( 'free' ) );
+		$this->assertSame( 20, Blt_Secure_Rule_Definitions::custom_rule_limit( 'pro' ) );
+		$this->assertSame( 100, Blt_Secure_Rule_Definitions::custom_rule_limit( 'business' ) );
+		$this->assertSame( 0, Blt_Secure_Rule_Definitions::custom_rule_limit( '' ) );
+		// https://developers.cloudflare.com/waf/rate-limiting-rules/#availability
+		$this->assertSame( 1, Blt_Secure_Rule_Definitions::ratelimit_rule_limit( 'free' ) );
+		$this->assertSame( 2, Blt_Secure_Rule_Definitions::ratelimit_rule_limit( 'pro' ) );
+		$this->assertSame( 5, Blt_Secure_Rule_Definitions::ratelimit_rule_limit( 'business' ) );
+	}
+
+	public function test_full_deploy_all_fits_the_free_custom_rule_budget() {
+		$used = count( Blt_Secure_Rule_Definitions::custom_pack_rules() )
+			+ count( Blt_Secure_Rule_Definitions::country_block_rules( array( 'CN' ) ) )
+			+ count( Blt_Secure_Rule_Definitions::leaked_creds_rules( 'free' ) )
+			+ count( Blt_Secure_Rule_Definitions::ioc_block_rules() );
+		$this->assertLessThanOrEqual( Blt_Secure_Rule_Definitions::custom_rule_limit( 'free' ), $used );
+	}
+
+	public function test_ioc_list_name_is_host_scoped_and_valid() {
+		$a = Blt_Secure_Rule_Definitions::ioc_list_name( 'www.Example.com' );
+		$b = Blt_Secure_Rule_Definitions::ioc_list_name( 'other.example.org' );
+		$this->assertSame( 'blt_secure_iocs_www_example_com', $a );
+		$this->assertNotSame( $a, $b );
+		$this->assertMatchesRegularExpression( '/^[a-z0-9_]{1,50}$/', Blt_Secure_Rule_Definitions::ioc_list_name( str_repeat( 'a-', 60 ) . '.com' ) );
+		$rule = Blt_Secure_Rule_Definitions::ioc_block_rules( $a )['block'];
+		$this->assertSame( '(ip.src in $' . $a . ')', $rule['expression'] );
+	}
+
 	public function test_rate_limit_rule() {
-		$rules = Blt_Secure_Rule_Definitions::rate_limit_rules( 'secret-door' );
+		// Pro and above: 5 / 60 s, blocked for 10 minutes.
+		$rules = Blt_Secure_Rule_Definitions::rate_limit_rules( 'secret-door', 'pro' );
 		$rule  = $rules['login'];
 
 		$this->assertSame(
-			'(http.request.uri.path eq "/wp-login.php" or http.request.uri.path eq "/xmlrpc.php" or http.request.uri.path eq "/secret-door")',
+			'(starts_with(lower(http.request.uri.path), "/wp-login.php") or starts_with(lower(http.request.uri.path), "/xmlrpc.php") or (lower(http.request.uri.path) eq "/secret-door" or starts_with(lower(http.request.uri.path), "/secret-door/")))',
 			$rule['expression']
 		);
 		$this->assertSame( array( 'cf.colo.id', 'ip.src' ), $rule['ratelimit']['characteristics'] );
@@ -70,42 +120,80 @@ class Test_Cf_Payloads extends TestCase {
 		$this->assertSame( 5, $rule['ratelimit']['requests_per_period'] );
 		$this->assertSame( 600, $rule['ratelimit']['mitigation_timeout'] );
 
+		// Free: Cloudflare only accepts a 10 s period and a 10 s block.
+		// https://developers.cloudflare.com/waf/rate-limiting-rules/#availability
+		$free = Blt_Secure_Rule_Definitions::rate_limit_rules( '', 'free' )['login']['ratelimit'];
+		$this->assertSame( 10, $free['period'] );
+		$this->assertSame( 10, $free['mitigation_timeout'] );
+		// An unknown plan gets the values every plan accepts.
+		$this->assertSame( $free, Blt_Secure_Rule_Definitions::rate_limit_rules( '', '' )['login']['ratelimit'] );
+
 		// Without a slug: only the two default endpoints.
-		$default = Blt_Secure_Rule_Definitions::rate_limit_rules();
-		$this->assertStringNotContainsString( ' or http.request.uri.path eq "/"', $default['login']['expression'] );
-		$this->assertSame(
-			'(http.request.uri.path eq "/wp-login.php" or http.request.uri.path eq "/xmlrpc.php")',
-			$default['login']['expression']
-		);
+		$default = Blt_Secure_Rule_Definitions::rate_limit_rules( '', 'pro' );
+		$this->assertStringNotContainsString( 'secret-door', $default['login']['expression'] );
+		$this->assertStringContainsString( '/wp-login.php', $default['login']['expression'] );
+		$this->assertStringContainsString( '/xmlrpc.php', $default['login']['expression'] );
+
+		// Subdirectory installs are rooted at the base path.
+		$sub = Blt_Secure_Rule_Definitions::rate_limit_rules( 'door', 'pro', '/blog' );
+		$this->assertStringContainsString( '"/blog/wp-login.php"', $sub['login']['expression'] );
+		$this->assertStringContainsString( '"/blog/door/"', $sub['login']['expression'] );
 	}
 
 	public function test_leaked_creds_payloads() {
+		// https://developers.cloudflare.com/waf/detections/leaked-credentials/ :
+		// url-encoded form fields are read with url_decode(...form["name"][0]).
 		$detection = Blt_Secure_Rule_Definitions::leaked_creds_detection();
-		$this->assertSame( 'lookup_json_string(http.request.body.form, "log")', $detection['username'] );
-		$this->assertSame( 'lookup_json_string(http.request.body.form, "pwd")', $detection['password'] );
+		$this->assertSame( 'url_decode(http.request.body.form["log"][0])', $detection['username'] );
+		$this->assertSame( 'url_decode(http.request.body.form["pwd"][0])', $detection['password'] );
 
-		$rules = Blt_Secure_Rule_Definitions::leaked_creds_rules();
+		// Pro and above: user+password check; Free/unknown: password_leaked (all plans).
+		$rules = Blt_Secure_Rule_Definitions::leaked_creds_rules( 'pro' );
 		$this->assertSame( '(cf.waf.credential_check.username_and_password_leaked)', $rules['challenge']['expression'] );
 		$this->assertSame( 'managed_challenge', $rules['challenge']['action'] );
+		$this->assertSame( '(cf.waf.credential_check.password_leaked)', Blt_Secure_Rule_Definitions::leaked_creds_rules( 'free' )['challenge']['expression'] );
+		$this->assertSame( '(cf.waf.credential_check.password_leaked)', Blt_Secure_Rule_Definitions::leaked_creds_rules()['challenge']['expression'] );
 	}
 
 	public function test_access_app_payloads() {
-		$app = Blt_Secure_Rule_Definitions::access_app( 'example.org', 'secret-door' );
+		$app = Blt_Secure_Rule_Definitions::access_app( 'example.org', 'secret-door', array( 'shane@s-fx.com' ) );
 		$this->assertSame( 'self_hosted', $app['type'] );
 		$this->assertSame( 'example.org/wp-admin', $app['domain'] );
-		$this->assertSame( array( 'example.org/wp-admin', 'example.org/secret-door' ), $app['self_hosted_domains'] );
+		// self_hosted_domains is deprecated (sunset 2025-11-21): destinations only.
+		$this->assertArrayNotHasKey( 'self_hosted_domains', $app );
+		$uris = array_column( $app['destinations'], 'uri' );
+		$this->assertSame( array( 'example.org/wp-admin', 'example.org/secret-door' ), $uris );
+		$this->assertSame( 'public', $app['destinations'][0]['type'] );
+		// Host-scoped name: two sites in one account never share an app.
+		$this->assertSame( '[BLT Secure] WordPress Admin - example.org', $app['name'] );
 
-		$default_app = Blt_Secure_Rule_Definitions::access_app( 'example.org' );
-		$this->assertContains( 'example.org/wp-login.php', $default_app['self_hosted_domains'] );
+		$default_app = Blt_Secure_Rule_Definitions::access_app( 'example.org', '', array( 'a@b.co' ) );
+		$this->assertContains( 'example.org/wp-login.php', array_column( $default_app['destinations'], 'uri' ) );
 
-		$policies = Blt_Secure_Rule_Definitions::access_policies( array( 'shane@s-fx.com' ) );
-		$this->assertSame( 'allow', $policies['allow']['decision'] );
-		$this->assertSame( 'shane@s-fx.com', $policies['allow']['include'][0]['email']['email'] );
+		// The allow policy is created INLINE: the app can never exist without it.
+		$this->assertCount( 1, $app['policies'] );
+		$this->assertSame( 'allow', $app['policies'][0]['decision'] );
+		$this->assertSame( 'shane@s-fx.com', $app['policies'][0]['include'][0]['email']['email'] );
 
 		$bypass = Blt_Secure_Rule_Definitions::access_bypass_app( 'example.org' );
 		$this->assertSame( 'example.org/wp-admin/admin-ajax.php', $bypass['domain'] );
-		$bypass_policies = Blt_Secure_Rule_Definitions::access_bypass_policies();
-		$this->assertSame( 'bypass', $bypass_policies['bypass']['decision'] );
+		$this->assertSame(
+			array( 'example.org/wp-admin/admin-ajax.php', 'example.org/wp-admin/admin-post.php' ),
+			array_column( $bypass['destinations'], 'uri' )
+		);
+		$this->assertSame( '[BLT Secure] admin-ajax bypass - example.org', $bypass['name'] );
+		$this->assertSame( 'bypass', $bypass['policies'][0]['decision'] );
+
+		// Subdirectory installs are rooted at the base path.
+		$sub = Blt_Secure_Rule_Definitions::access_app( 'example.org', '', array( 'a@b.co' ), '/blog' );
+		$this->assertSame( 'example.org/blog/wp-admin', $sub['domain'] );
+	}
+
+	public function test_access_config_hash_tracks_inputs() {
+		$h = Blt_Secure_Rule_Definitions::access_config_hash( 'example.org', 'door', array( 'a@b.co' ) );
+		$this->assertSame( $h, Blt_Secure_Rule_Definitions::access_config_hash( 'EXAMPLE.org', 'door', array( 'A@b.co' ) ) );
+		$this->assertNotSame( $h, Blt_Secure_Rule_Definitions::access_config_hash( 'example.org', 'other', array( 'a@b.co' ) ) );
+		$this->assertNotSame( $h, Blt_Secure_Rule_Definitions::access_config_hash( 'example.org', 'door', array( 'x@y.co' ) ) );
 	}
 
 	public function test_config_hash_stability() {
@@ -148,7 +236,7 @@ class Test_Cf_Payloads extends TestCase {
 		$rule  = $rules['countries'];
 
 		$this->assertSame(
-			'((ip.src.country in {"CN"}) and (http.request.uri.path eq "/wp-login.php" or http.request.uri.path eq "/xmlrpc.php" or http.request.uri.path eq "/secret-door"))',
+			'((ip.src.country in {"CN"}) and (starts_with(lower(http.request.uri.path), "/wp-login.php") or starts_with(lower(http.request.uri.path), "/xmlrpc.php") or (lower(http.request.uri.path) eq "/secret-door" or starts_with(lower(http.request.uri.path), "/secret-door/"))))',
 			$rule['expression']
 		);
 
@@ -423,7 +511,6 @@ class Test_Cf_Deployer extends TestCase {
 					'id'    => 'rs1',
 					'rules' => array(
 						array( 'id' => 'r-asn', 'ref' => 'blt-secure-custom-asn' ),
-						array( 'id' => 'r-tor', 'ref' => 'blt-secure-custom-tor' ),
 						array( 'id' => 'r-paths', 'ref' => 'blt-secure-custom-paths' ),
 					),
 				),
@@ -442,10 +529,12 @@ class Test_Cf_Deployer extends TestCase {
 		$this->assertSame( 'rs1', $record['ruleset_id'] );
 		// Existing rule was PATCHed (adopted), not duplicated.
 		$this->assertContains( 'PATCH /zones/zone123/rulesets/rs1/rules/r-asn', $log );
-		// The two missing rules were POSTed.
-		$this->assertSame( 2, count( array_keys( $log, 'POST /zones/zone123/rulesets/rs1/rules', true ) ) );
-		// State persisted with all three ids.
-		$this->assertSame( array( 'asn' => 'r-asn', 'tor' => 'r-tor', 'paths' => 'r-paths' ), $record['rule_ids'] );
+		// The one missing rule was POSTed; the foreign rule was never touched.
+		$this->assertSame( 1, count( array_keys( $log, 'POST /zones/zone123/rulesets/rs1/rules', true ) ) );
+		$this->assertNotContains( 'PATCH /zones/zone123/rulesets/rs1/rules/r-foreign', $log );
+		// State persisted with both ids.
+		$this->assertSame( array( 'asn' => 'r-asn', 'paths' => 'r-paths' ), $record['rule_ids'] );
+		$this->assertArrayNotHasKey( 'partial', $record );
 		$this->assertNotNull( $state->deployment( 'custom_pack' ) );
 	}
 

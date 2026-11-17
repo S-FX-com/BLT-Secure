@@ -62,4 +62,22 @@ class Test_Ip_Resolver extends TestCase {
 		$this->assertFalse( Blt_Secure_Ip_Resolver::is_valid_cidr( 'x/8' ) );
 		$this->assertFalse( Blt_Secure_Ip_Resolver::is_valid_cidr( '10.0.0.0/abc' ) );
 	}
+
+	public function test_network_key_keeps_ipv4_and_truncates_ipv6_to_slash_64() {
+		$this->assertSame( '203.0.113.7', Blt_Secure_Ip_Resolver::network_key( '203.0.113.7' ) );
+		$this->assertSame( '2001:db8:1:2::/64', Blt_Secure_Ip_Resolver::network_key( '2001:db8:1:2:3:4:5:6' ) );
+		$this->assertSame( Blt_Secure_Ip_Resolver::network_key( '2001:db8:1:2::1' ), Blt_Secure_Ip_Resolver::network_key( '2001:db8:1:2:ffff:ffff:ffff:ffff' ) );
+		$this->assertNotSame( Blt_Secure_Ip_Resolver::network_key( '2001:db8:1:2::1' ), Blt_Secure_Ip_Resolver::network_key( '2001:db8:1:3::1' ) );
+	}
+
+	public function test_network_key_unmaps_ipv4_mapped_addresses_and_rejects_garbage() {
+		$this->assertSame( '203.0.113.7', Blt_Secure_Ip_Resolver::network_key( '::ffff:203.0.113.7' ) );
+		$this->assertSame( '', Blt_Secure_Ip_Resolver::network_key( 'not-an-ip' ) );
+		$this->assertSame( '', Blt_Secure_Ip_Resolver::network_key( '' ) );
+	}
+
+	public function test_ipv4_mapped_peer_matches_cloudflare_ipv4_range() {
+		$this->assertTrue( Blt_Secure_Ip_Resolver::ip_in_ranges( '::ffff:104.16.1.1', array( '104.16.0.0/13' ) ) );
+		$this->assertFalse( Blt_Secure_Ip_Resolver::ip_in_ranges( '::ffff:8.8.8.8', array( '104.16.0.0/13' ) ) );
+	}
 }

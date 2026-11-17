@@ -42,6 +42,18 @@ class Blt_Secure_Health_Context {
 	}
 
 	/**
+	 * Whether a self-request status code is a real page response.
+	 *
+	 * Pure function (unit-tested).
+	 *
+	 * @param int $code HTTP status.
+	 * @return bool
+	 */
+	public static function is_usable_status( $code ) {
+		return (int) $code >= 200 && (int) $code < 300;
+	}
+
+	/**
 	 * Fetch (once) the front page and return its headers as a lowercased
 	 * name => value map, or false if the request could not be made.
 	 *
@@ -64,6 +76,15 @@ class Blt_Secure_Health_Context {
 		);
 
 		if ( is_wp_error( $response ) ) {
+			$this->headers = false;
+			return $this->headers;
+		}
+
+		// Only a successful page says anything about the site's own headers. A
+		// 401/403/429/5xx (Cloudflare Access or a bot challenge, basic auth, a
+		// maintenance page, a host WAF) or an unresolved redirect carries a
+		// different set, and judging it would report false failures.
+		if ( ! self::is_usable_status( (int) wp_remote_retrieve_response_code( $response ) ) ) {
 			$this->headers = false;
 			return $this->headers;
 		}

@@ -23,6 +23,15 @@ class Blt_Secure_Encrypted_Option_Store implements Blt_Secure_Credential_Store {
 	const CANARY_OPTION = 'blt_secure_crypto_check';
 
 	/**
+	 * Persistent "credentials were found undecryptable" flag (autoload no).
+	 * Deliberately NOT under OPTION_PREFIX so it can never be mistaken for a
+	 * credential. It outlives the request that detected the rotation (that
+	 * request is often cron or a heartbeat nobody sees) and clears when the
+	 * admin stores a credential again.
+	 */
+	const INVALID_FLAG_OPTION = 'blt_secure_crypto_invalid';
+
+	/**
 	 * Crypto backend.
 	 *
 	 * @var Blt_Secure_Crypto
@@ -72,7 +81,11 @@ class Blt_Secure_Encrypted_Option_Store implements Blt_Secure_Credential_Store {
 
 		$plain = $this->crypto->decrypt( $envelope );
 		if ( is_wp_error( $plain ) ) {
-			$this->invalidate();
+			// The canary decrypted, so the key is right and only THIS row is
+			// bad (tampering or corruption): drop just that row. Wiping every
+			// credential here would destroy values the admin just re-entered.
+			delete_option( self::OPTION_PREFIX . sanitize_key( $key ) );
+			$this->flag_invalid();
 			return null;
 		}
 
@@ -103,6 +116,7 @@ class Blt_Secure_Encrypted_Option_Store implements Blt_Secure_Credential_Store {
 		}
 
 		update_option( self::OPTION_PREFIX . sanitize_key( $key ), $envelope, false );
+		delete_option( self::INVALID_FLAG_OPTION );
 		return true;
 	}
 
@@ -117,12 +131,22 @@ class Blt_Secure_Encrypted_Option_Store implements Blt_Secure_Credential_Store {
 	}
 
 	/**
-	 * Whether stored secrets were found undecryptable this request.
+	 * Whether stored secrets were found undecryptable — in this request or in
+	 * an earlier one that nobody was watching (persistent flag).
 	 *
 	 * @return bool
 	 */
 	public function is_invalidated() {
-		return $this->invalidated;
+		return $this->invalidated || (bool) get_option( self::INVALID_FLAG_OPTION, false );
+	}
+
+	/**
+	 * Persist the invalid flag.
+	 *
+	 * @return void
+	 */
+	private function flag_invalid() {
+		update_option( self::INVALID_FLAG_OPTION, time(), false );
 	}
 
 	/**
@@ -151,12 +175,40 @@ class Blt_Secure_Encrypted_Option_Store implements Blt_Secure_Credential_Store {
 
 	/**
 	 * Known credential keys — every key any consumer stores must be listed
-	 * so salt rotation wipes them all (they are unrecoverable).
+	 * so salt rotation wipes them all (they are unrecoverable). invalidate()
+	 * additionally enumerates blt_secure_cred_* rows, so a consumer added
+	 * later is covered even if it is forgotten here.
 	 *
 	 * @return string[]
 	 */
 	public static function known_keys() {
-		return array( 'cf_token', 'github_token' );
+		return array( 'cf_token', 'github_token', 'slack_webhook', 'fleet_token' );
+	}
+
+	/**
+	 * Every stored credential key: the known list plus any other
+	 * blt_secure_cred_* row found in wp_options.
+	 *
+	 * @return string[]
+	 */
+	private function all_keys() {
+		$keys = self::known_keys();
+
+		global $wpdb;
+		if ( isset( $wpdb ) && is_object( $wpdb ) && isset( $wpdb->options ) && method_exists( $wpdb, 'get_col' ) ) {
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+			$names = $wpdb->get_col(
+				$wpdb->prepare(
+					"SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s",
+					$wpdb->esc_like( self::OPTION_PREFIX ) . '%'
+				)
+			);
+			foreach ( (array) $names as $name ) {
+				$keys[] = substr( (string) $name, strlen( self::OPTION_PREFIX ) );
+			}
+		}
+
+		return array_values( array_unique( array_filter( $keys ) ) );
 	}
 
 	/**
@@ -168,8 +220,9 @@ class Blt_Secure_Encrypted_Option_Store implements Blt_Secure_Credential_Store {
 	private function invalidate() {
 		$this->invalidated = true;
 		delete_option( self::CANARY_OPTION );
-		foreach ( self::known_keys() as $key ) {
+		foreach ( $this->all_keys() as $key ) {
 			delete_option( self::OPTION_PREFIX . $key );
 		}
+		$this->flag_invalid();
 	}
 }

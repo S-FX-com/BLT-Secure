@@ -82,6 +82,7 @@ require_once BLT_SECURE_DIR . 'includes/scanner/class-baseline-scanner.php';
 require_once BLT_SECURE_DIR . 'includes/modules/class-baseline.php';
 require_once BLT_SECURE_DIR . 'includes/modules/class-ioc.php';
 require_once BLT_SECURE_DIR . 'includes/modules/class-timeline.php';
+require_once BLT_SECURE_DIR . 'includes/class-buoy-bridge.php';
 require_once BLT_SECURE_DIR . 'includes/class-updater.php';
 require_once BLT_SECURE_DIR . 'includes/class-blt-secure.php';
 
